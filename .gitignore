@@ -1,0 +1,24 @@
+# Librairies locales — recréer avec : pip install -r requirements.txt --target=vendor
+vendor/
+
+# Base de données locale — source de vérité, ne pas versionner
+decisions.db
+
+# Exports générés
+exports/
+
+# Sources brutes — données internes, ne pas versionner
+data/
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
