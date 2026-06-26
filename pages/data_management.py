@@ -1,15 +1,16 @@
 """
-Page Données — gestion des sources et rechargement DB.
-Point d'entrée pour remplacer l'extract DECA sans toucher au reste.
+Page Données — gestion des sources, rechargement DB et export DECA.
 """
 import shutil
 from pathlib import Path
 from datetime import datetime
+import io
 
 import streamlit as st
 
-from config import DATA_DIR, SRC_DECA_PATTERNS, SRC_PANOPLY_PATTERNS, SRC_DMC_PATTERNS, SRC_ICV_PATTERNS
+from config import DATA_DIR, MODULES, SRC_DECA_PATTERNS, SRC_PANOPLY_PATTERNS, SRC_DMC_PATTERNS, SRC_ICV_PATTERNS
 from scripts.reload_sources import reload, _find_file
+from scripts.export_deca import build_export_df, export
 
 
 def _current_files() -> dict:
@@ -128,3 +129,58 @@ def render():
                 except Exception as e:
                     st.error(f"Erreur lors du rechargement : {e}")
                     raise
+
+    st.divider()
+
+    # ── Export DECA ───────────────────────────────────────────────────────────
+    st.subheader("Export DECA")
+    st.caption(
+        "Génère le fichier `.xlsx` à pousser dans DECA. "
+        "Seules les décisions **VALIDÉ** sont incluses."
+    )
+
+    col_mod, col_prev = st.columns([1, 4])
+    with col_mod:
+        export_module = st.selectbox(
+            "Filtrer par module",
+            options=["Tous"] + MODULES,
+            key="export_module_sel",
+        )
+        module_filter = None if export_module == "Tous" else export_module
+
+    # Preview
+    try:
+        preview_df = build_export_df(module_filter)
+    except Exception as e:
+        preview_df = None
+        st.error(f"Erreur lors de la prévisualisation : {e}")
+
+    if preview_df is not None and not preview_df.empty:
+        with col_prev:
+            st.caption(f"{len(preview_df)} décision(s) VALIDÉ à exporter.")
+
+        with st.expander("Aperçu de l'export", expanded=False):
+            st.dataframe(preview_df, hide_index=True, use_container_width=True)
+
+        # Générer le xlsx en mémoire pour le download
+        buf = io.BytesIO()
+        import pandas as pd
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            preview_df.to_excel(writer, index=False, sheet_name="Décisions VALIDÉ")
+        buf.seek(0)
+
+        from datetime import timezone
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+        suffix = f"_{module_filter}" if module_filter else "_ALL"
+        filename = f"export_DECA{suffix}_{ts}.xlsx"
+
+        st.download_button(
+            label=f"Télécharger l'export ({len(preview_df)} lignes)",
+            data=buf,
+            file_name=filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+        )
+    elif preview_df is not None and preview_df.empty:
+        with col_prev:
+            st.warning("Aucune décision VALIDÉ" + (f" sur {module_filter}" if module_filter else "") + ".")
