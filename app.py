@@ -26,14 +26,17 @@ with st.sidebar:
 
     page = st.radio(
         "Navigation",
-        ["Pré-check", "Réunion", "Données"],
+        ["Dashboard", "Pré-check", "Réunion", "Données", "Historique"],
         label_visibility="collapsed",
     )
     st.divider()
     st.caption("Safran Aircraft Engine Services Brussels")
 
 # ── Page routing ──────────────────────────────────────────────────────────────
-if page == "Pré-check":
+if page == "Dashboard":
+    from pages.dashboard import render
+    render()
+elif page == "Pré-check":
     from pages.precheck import render
     render()
 elif page == "Réunion":
@@ -41,4 +44,7 @@ elif page == "Réunion":
     render()
 elif page == "Données":
     from pages.data_management import render
+    render()
+elif page == "Historique":
+    from pages.historique import render
     render()

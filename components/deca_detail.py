@@ -120,6 +120,18 @@ def _render_decision_info(marquage: str):
     if dec["updated_at"]:
         st.caption(f"Mis à jour le {dec['updated_at'][:16]} par {dec['updated_by'] or '?'}")
 
+    # ── Reset décision ────────────────────────────────────────────────────────
+    if dec["decision"] in ("VALIDÉ", "EN ATTENTE"):
+        st.divider()
+        st.warning("Cette décision est verrouillée. Le reset la repasse à **EN COURS**.", icon="⚠️")
+        col_btn, col_confirm, _ = st.columns([1, 2, 3])
+        confirm = col_confirm.checkbox("Je confirme le déverrouillage", key=f"reset_confirm_{marquage}")
+        if col_btn.button("🔓 Déverrouiller", key=f"reset_btn_{marquage}",
+                          type="primary", disabled=not confirm, use_container_width=True):
+            queries.reset_decision(marquage, reset_by="user")
+            st.success(f"Décision `{marquage}` repassée à EN COURS.")
+            st.rerun()
+
 
 def _render_photos(marquage: str):
     photos = _find_photos(marquage)

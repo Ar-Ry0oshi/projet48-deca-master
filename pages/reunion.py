@@ -13,16 +13,14 @@ from config import MODULES
 from db import queries
 from components.pn_search import pn_search_widget
 from components.deca_detail import show_deca_detail
+from components.pn_info import render_pn_info
+from components.deca_hors_perimetre import render_excluded
+from components.deca_table import render_readonly_table, render_deca_form, _SVC3_OPTS
 from services import svc3_options, svc1_for_svc3, svc4_options, svc2_for_svc3, svc1_to_svc4_all
 
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
-_SVC3_OPTS   = [""] + svc3_options()
-_SVC1_LABELS = {
-    "SAESB LSO - B118 - ENGINE MX / REP": "B118 — LSO",
-    "SAESB MF - B24 - MODULE MX / REP":   "B24 — MF",
-}
 _STATUS_OPTIONS = ["VALIDÉ", "EN ATTENTE"]
 
 
@@ -89,124 +87,6 @@ def _save_deca(marquage: str, pn_short: str, module: str,
     )
 
 
-# ── Bandeau infos PN ──────────────────────────────────────────────────────────
-
-def _render_pn_info(pn_short: str, active_df: pd.DataFrame):
-    if active_df.empty:
-        return
-    row = active_df.iloc[0]
-    modules = [m.strip() for m in (row.get("modules_effective") or "").split(",") if m.strip()]
-    assy = row.get("assy_flag") or "—"
-    opcodes = row.get("opcodes_translated") or ""
-    n_active = len(active_df)
-
-    chips = st.columns([1, 1, 1, 3])
-    chips[0].metric("Modules", ", ".join(modules) if modules else "—")
-    chips[1].metric("ASSY flag", assy)
-    chips[2].metric("DECAs actifs", n_active)
-    if opcodes:
-        st.caption(f"ICV : {opcodes}")
-
-
-# ── Formulaire de décision par DECA ──────────────────────────────────────────
-
-def _form_key(marquage: str, field: str) -> str:
-    return f"reu_{marquage}_{field}"
-
-
-def _init_form_state(marquage: str, dec: dict | None):
-    for field, default in [
-        ("svc3", (dec["n_service3"] if dec else "") or ""),
-        ("bldg", ""),
-        ("svc4", (dec["n_service4"] if dec else "") or ""),
-        ("dec",  (dec["decision"]   if dec else "VALIDÉ")
-                  if dec and dec["decision"] in _STATUS_OPTIONS else "VALIDÉ"),
-        ("comm", (dec["commentaire"] if dec else "") or ""),
-    ]:
-        k = _form_key(marquage, field)
-        if k not in st.session_state:
-            st.session_state[k] = default
-
-
-def _render_deca_form(row: dict) -> dict:
-    marquage = row["marquage"]
-    dec = queries.get_decision(marquage)
-    locked = bool(dec and dec["decision"] in ("VALIDÉ", "EN ATTENTE"))
-    pre_check_val = (dec["pre_check"] if dec else "") or ""
-
-    _init_form_state(marquage, dec)
-
-    with st.container(border=True):
-        hcol, bcol = st.columns([3, 1])
-        hcol.markdown(f"**`{marquage}`** — {row.get('ref_constructeur','')}")
-        if locked:
-            bcol.success(dec["decision"])
-
-        # Badge pré-check (lecture seule en réunion)
-        if pre_check_val:
-            st.caption(f"Pré-check : **{pre_check_val}**")
-
-        if locked:
-            c1, c2, c3 = st.columns(3)
-            c1.markdown(f"**N.Service3** : {dec.get('n_service3') or '—'}")
-            c2.markdown(f"**Bâtiment** : {_SVC1_LABELS.get(dec.get('n_service1',''), dec.get('n_service1','') or '—')}")
-            c3.markdown(f"**N.Service4** : {dec.get('n_service4') or '—'}")
-            return {"marquage": marquage, "_locked": True, "pre_check": pre_check_val}
-
-        # ── Service 3 ─────────────────────────────────────────────────────────
-        k_svc3 = _form_key(marquage, "svc3")
-        svc3 = st.selectbox("N.Service3", options=_SVC3_OPTS, key=k_svc3)
-
-        # ── Dériver Service 1 ─────────────────────────────────────────────────
-        svc1_candidates = svc1_for_svc3(svc3) if svc3 else []
-        svc1 = ""
-
-        if not svc3:
-            st.caption("Sélectionner un Service3 pour voir le bâtiment.")
-        elif len(svc1_candidates) == 1:
-            svc1 = svc1_candidates[0]
-            st.info(f"Bâtiment : **{_SVC1_LABELS.get(svc1, svc1)}**", icon="🏭")
-        else:
-            k_bldg = _form_key(marquage, "bldg")
-            bldg_options = [_SVC1_LABELS.get(s, s) for s in svc1_candidates]
-            bldg_labels = {_SVC1_LABELS.get(s, s): s for s in svc1_candidates}
-            chosen_label = st.radio(
-                "Ce Service3 existe dans les 2 bâtiments — choisir :",
-                options=bldg_options,
-                key=k_bldg,
-                horizontal=True,
-            )
-            svc1 = bldg_labels.get(chosen_label, "")
-
-        # ── Service 4 ─────────────────────────────────────────────────────────
-        k_svc4 = _form_key(marquage, "svc4")
-        svc4_opts = [""] + svc4_options(svc1, svc3) if svc1 else [""]
-        current_svc4 = st.session_state.get(k_svc4, "")
-        if current_svc4 and current_svc4 not in svc4_opts:
-            svc4_opts = svc4_opts + [current_svc4]
-
-        svc4 = st.selectbox("N.Service4", options=svc4_opts, key=k_svc4, disabled=not svc1)
-
-        # ── Décision + Commentaire ────────────────────────────────────────────
-        c1, c2 = st.columns([1, 3])
-        final_dec = c1.selectbox(
-            "Décision", options=_STATUS_OPTIONS,
-            key=_form_key(marquage, "dec"),
-        )
-        comm = c2.text_input("Commentaire", key=_form_key(marquage, "comm"))
-
-    return {
-        "marquage":    marquage,
-        "svc3":        svc3,
-        "svc1":        svc1,
-        "svc4":        svc4,
-        "pre_check":   pre_check_val,
-        "decision":    final_dec,
-        "commentaire": comm,
-        "_locked":     locked,
-    }
-
-
 # ── Vérification ──────────────────────────────────────────────────────────────
 
 def _forms_complete(forms: list[dict]) -> tuple[bool, str]:
@@ -220,19 +100,6 @@ def _forms_complete(forms: list[dict]) -> tuple[bool, str]:
         if f.get("decision") not in _STATUS_OPTIONS:
             return False, f"Décision invalide sur `{f['marquage']}`"
     return True, ""
-
-
-# ── Hors périmètre ────────────────────────────────────────────────────────────
-
-def _render_excluded(excluded_df: pd.DataFrame):
-    if excluded_df.empty:
-        return
-    with st.expander(f"Hors périmètre — même PN ({len(excluded_df)} DECAs)", expanded=False):
-        display_cols = [c for c in [
-            "marquage", "ref_constructeur", "exclusion_reason",
-            "service1", "service2", "service3", "etat",
-        ] if c in excluded_df.columns]
-        st.dataframe(excluded_df[display_cols], hide_index=True, use_container_width=True)
 
 
 # ── Statut badge ──────────────────────────────────────────────────────────────
@@ -278,20 +145,20 @@ def _render_nav_view(module: str):
         st.rerun()
 
     active_df, excluded_df = _load_deca_rows(pn, module)
-    _render_pn_info(pn, active_df)
+    render_pn_info(pn, active_df)
     st.divider()
 
     if active_df.empty:
         st.info("Aucun DECA actif pour ce PN dans ce module.")
         return
 
-    _render_readonly_table(active_df)
+    render_readonly_table(active_df)
     st.divider()
     st.markdown(f"**Décisions** — {len(active_df)} DECA(s)")
 
     forms = []
     for _, row in active_df.iterrows():
-        forms.append(_render_deca_form(dict(row)))
+        forms.append(render_deca_form(dict(row), mode="reunion", key_prefix="reu"))
 
     # Copie rapide multi-DECA
     if len(active_df) > 1:
@@ -317,7 +184,7 @@ def _render_nav_view(module: str):
             st.success(f"{len(forms)} DECAs validés.")
             st.rerun()
 
-    _render_excluded(excluded_df)
+    render_excluded(excluded_df)
     st.divider()
 
     col_val, col_ign, col_hint = st.columns([1, 1, 3])
@@ -361,25 +228,6 @@ def _render_nav_view(module: str):
     )
     if col_btn.button("🔍 Ouvrir", key=f"reu_detail_btn_{module}_{pn}", use_container_width=True):
         show_deca_detail(selected)
-
-
-# ── Table read-only ───────────────────────────────────────────────────────────
-
-def _render_readonly_table(active_df: pd.DataFrame):
-    cols = ["marquage", "ref_constructeur", "service3", "assy_flag"]
-    cfg = {
-        "marquage":         st.column_config.TextColumn("Marquage", width="small"),
-        "ref_constructeur": st.column_config.TextColumn("Ref. constructeur", width="medium"),
-        "service3":         st.column_config.TextColumn("Svc 3 actuel", width="medium"),
-        "assy_flag":        st.column_config.TextColumn("ASSY", width="small"),
-    }
-    available = [c for c in cols if c in active_df.columns]
-    st.dataframe(
-        active_df[available].fillna(""),
-        column_config=cfg,
-        hide_index=True,
-        use_container_width=True,
-    )
 
 
 # ── Vue liste plate ───────────────────────────────────────────────────────────

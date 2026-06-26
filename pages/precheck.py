@@ -11,19 +11,18 @@ from config import MODULES, PRECHECK_FLAGS
 from db import queries
 from components.pn_search import pn_search_widget
 from components.deca_detail import show_deca_detail
+from components.pn_info import render_pn_info
+from components.deca_hors_perimetre import render_excluded
+from components.deca_table import render_readonly_table, render_deca_form
 from services import svc3_options, svc1_for_svc3, svc4_options
 
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
 _SVC3_OPTS   = [""] + svc3_options()
-_SVC1_LABELS = {
-    "SAESB LSO - B118 - ENGINE MX / REP": "B118 — LSO",
-    "SAESB MF - B24 - MODULE MX / REP":   "B24 — MF",
-}
+_PRECHECK_OPTS   = [""] + PRECHECK_FLAGS[:3]
 _STATUS_PRECHECK = ["EN COURS", "PRÉ-CHECK"]
 _STATUS_REUNION  = ["VALIDÉ", "EN ATTENTE"]
-_PRECHECK_OPTS   = [""] + PRECHECK_FLAGS[:3]
 
 
 # ── Session state ─────────────────────────────────────────────────────────────
@@ -100,218 +99,6 @@ def _save_deca(marquage: str, pn_short: str, module: str, mode: str,
     )
 
 
-# ── Bandeau infos PN ──────────────────────────────────────────────────────────
-
-def _render_pn_info(pn_short: str, active_df: pd.DataFrame):
-    if active_df.empty:
-        return
-    row = active_df.iloc[0]
-    modules = [m.strip() for m in (row.get("modules_effective") or "").split(",") if m.strip()]
-    assy = row.get("assy_flag") or "—"
-    mod_source = row.get("module_source") or "none"
-    conflict = row.get("module_conflict_detail") or ""
-    opcodes = row.get("opcodes_translated") or ""
-    n_active = len(active_df)
-    n_modules = len(modules)
-
-    chips = st.columns([1, 1, 1, 1, 3])
-    chips[0].metric("Modules", ", ".join(modules) if modules else "—")
-    chips[1].metric("ASSY flag", assy)
-    chips[2].metric("DECAs actifs", n_active)
-    if n_modules > 1 and n_active < n_modules:
-        chips[3].warning(f"⚠ {n_modules} modules, {n_active} DECAs")
-    elif n_modules > 1:
-        chips[3].info(f"ℹ {n_modules} modules")
-    else:
-        chips[3].empty()
-
-    if mod_source == "conflict":
-        st.caption(f"⚠️ Conflit sources — {conflict}")
-    elif mod_source == "panoply_only":
-        st.caption("Source : Panoply uniquement (absent du DMC)")
-    elif mod_source == "esm_only":
-        st.caption("Source : DMC/ESM uniquement (absent de Panoply)")
-    if opcodes:
-        st.caption(f"ICV : {opcodes}")
-
-
-# ── Table read-only (infos outil) ─────────────────────────────────────────────
-
-def _render_readonly_table(active_df: pd.DataFrame, show_svc: bool, show_loc: bool):
-    if active_df.empty:
-        return
-
-    cols = ["marquage", "ref_constructeur"]
-    cfg = {
-        "marquage":         st.column_config.TextColumn("Marquage", width="small"),
-        "ref_constructeur": st.column_config.TextColumn("Ref. constructeur", width="medium"),
-    }
-    if show_svc:
-        for i in range(1, 6):
-            k = f"service{i}"
-            cols.append(k)
-            cfg[k] = st.column_config.TextColumn(f"Svc {i}", width="small")
-    if show_loc:
-        for i in range(1, 4):
-            k = f"localisation{i}"
-            cols.append(k)
-            cfg[k] = st.column_config.TextColumn(f"Loc {i}", width="small")
-
-    available = [c for c in cols if c in active_df.columns]
-    st.dataframe(
-        active_df[available].fillna(""),
-        column_config=cfg,
-        hide_index=True,
-        use_container_width=True,
-    )
-
-
-# ── Formulaire de décision par DECA (avec cascade) ───────────────────────────
-
-def _form_key(marquage: str, field: str) -> str:
-    return f"pc_{marquage}_{field}"
-
-
-def _init_form_state(marquage: str, dec: dict | None):
-    """Initialise les valeurs du formulaire depuis la DB si pas encore en session."""
-    for field, default in [
-        ("svc3", (dec["n_service3"] if dec else "") or ""),
-        ("bldg", ""),   # override bâtiment si service3 ambigu
-        ("svc4", (dec["n_service4"] if dec else "") or ""),
-        ("pre",  (dec["pre_check"]  if dec else "") or ""),
-        ("dec",  (dec["decision"]   if dec else "EN COURS")),
-        ("comm", (dec["commentaire"] if dec else "") or ""),
-    ]:
-        k = _form_key(marquage, field)
-        if k not in st.session_state:
-            st.session_state[k] = default
-
-
-def _render_deca_form(row: dict, mode: str) -> dict:
-    """
-    Affiche le formulaire de décision pour un DECA.
-    Retourne un dict avec les valeurs actuelles.
-    """
-    marquage = row["marquage"]
-    dec = queries.get_decision(marquage)
-    locked = bool(dec and dec["decision"] in ("VALIDÉ", "EN ATTENTE"))
-
-    _init_form_state(marquage, dec)
-
-    with st.container(border=True):
-        header_col, badge_col = st.columns([3, 1])
-        header_col.markdown(f"**`{marquage}`** — {row.get('ref_constructeur','')}")
-        if locked:
-            badge_col.success(dec["decision"])
-        elif dec and dec.get("decision") == "PRÉ-CHECK":
-            badge_col.warning("Pré-check")
-        else:
-            badge_col.info("En cours")
-
-        if locked:
-            # Affichage read-only
-            c1, c2, c3, c4 = st.columns(4)
-            c1.markdown(f"**N.Service3** : {dec.get('n_service3') or '—'}")
-            c2.markdown(f"**Bâtiment** : {_SVC1_LABELS.get(dec.get('n_service1',''), dec.get('n_service1','') or '—')}")
-            c3.markdown(f"**N.Service4** : {dec.get('n_service4') or '—'}")
-            c4.markdown(f"**Commentaire** : {dec.get('commentaire') or '—'}")
-            return {"marquage": marquage, "_locked": True}
-
-        # ── Service 3 ─────────────────────────────────────────────────────────
-        k_svc3 = _form_key(marquage, "svc3")
-        svc3 = st.selectbox(
-            "N.Service3",
-            options=_SVC3_OPTS,
-            key=k_svc3,
-            disabled=locked,
-        )
-
-        # ── Dériver Service 1 ─────────────────────────────────────────────────
-        svc1_candidates = svc1_for_svc3(svc3) if svc3 else []
-        svc1 = ""
-
-        if not svc3:
-            st.caption("Sélectionner un Service3 pour voir le bâtiment.")
-        elif len(svc1_candidates) == 1:
-            svc1 = svc1_candidates[0]
-            label = _SVC1_LABELS.get(svc1, svc1)
-            st.info(f"Bâtiment : **{label}**", icon="🏭")
-        else:
-            # Service3 ambigu → l'utilisateur choisit le bâtiment
-            k_bldg = _form_key(marquage, "bldg")
-            bldg_options = [_SVC1_LABELS.get(s, s) for s in svc1_candidates]
-            bldg_labels = {_SVC1_LABELS.get(s, s): s for s in svc1_candidates}
-            chosen_label = st.radio(
-                "Ce Service3 existe dans les 2 bâtiments — choisir :",
-                options=bldg_options,
-                key=k_bldg,
-                horizontal=True,
-            )
-            svc1 = bldg_labels.get(chosen_label, "")
-
-        # ── Service 4 (filtré par bâtiment) ───────────────────────────────────
-        k_svc4 = _form_key(marquage, "svc4")
-        svc4_opts = [""] + svc4_options(svc1, svc3) if svc1 else [""]
-        # Préserver la valeur si elle existe dans les nouvelles options
-        current_svc4 = st.session_state.get(k_svc4, "")
-        if current_svc4 and current_svc4 not in svc4_opts:
-            svc4_opts = svc4_opts + [current_svc4]
-
-        svc4 = st.selectbox(
-            "N.Service4",
-            options=svc4_opts,
-            key=k_svc4,
-            disabled=locked or not svc1,
-        )
-
-        # ── Pré-check + Décision + Commentaire ───────────────────────────────
-        c1, c2, c3 = st.columns([1, 1, 3])
-
-        if mode == "precheck":
-            pre = c1.selectbox(
-                "Pré-check",
-                options=_PRECHECK_OPTS,
-                key=_form_key(marquage, "pre"),
-                disabled=locked,
-            )
-            # Décision auto en precheck
-            auto_dec = "PRÉ-CHECK" if svc3 else "EN COURS"
-            c2.caption("Décision (auto)")
-            c2.markdown(f"**{auto_dec}**")
-            final_dec = auto_dec
-        else:
-            pre = c1.selectbox(
-                "Pré-check",
-                options=_PRECHECK_OPTS,
-                key=_form_key(marquage, "pre"),
-                disabled=True,
-                help="Lecture seule en mode réunion",
-            )
-            final_dec = c2.selectbox(
-                "Décision",
-                options=_STATUS_REUNION,
-                key=_form_key(marquage, "dec"),
-                disabled=locked,
-            )
-
-        comm = c3.text_input(
-            "Commentaire",
-            key=_form_key(marquage, "comm"),
-            disabled=locked,
-        )
-
-    return {
-        "marquage": marquage,
-        "svc3": svc3,
-        "svc1": svc1,
-        "svc4": svc4,
-        "pre_check": pre if mode == "precheck" else (dec["pre_check"] if dec else ""),
-        "decision": final_dec,
-        "commentaire": comm,
-        "_locked": locked,
-    }
-
-
 # ── Vérification avant passage ────────────────────────────────────────────────
 
 def _forms_complete(forms: list[dict], mode: str) -> tuple[bool, str]:
@@ -325,19 +112,6 @@ def _forms_complete(forms: list[dict], mode: str) -> tuple[bool, str]:
         if mode == "reunion" and f.get("decision") not in ("VALIDÉ", "EN ATTENTE"):
             return False, f"Décision manquante sur `{f['marquage']}`"
     return True, ""
-
-
-# ── Hors périmètre ────────────────────────────────────────────────────────────
-
-def _render_excluded(excluded_df: pd.DataFrame):
-    if excluded_df.empty:
-        return
-    with st.expander(f"Hors périmètre — même PN ({len(excluded_df)} DECAs)", expanded=False):
-        display_cols = [c for c in [
-            "marquage", "ref_constructeur", "exclusion_reason",
-            "service1", "service2", "service3", "etat",
-        ] if c in excluded_df.columns]
-        st.dataframe(excluded_df[display_cols], hide_index=True, use_container_width=True)
 
 
 # ── Vue navigation PN ─────────────────────────────────────────────────────────
@@ -380,7 +154,7 @@ def _render_nav_view(module: str, mode: str):
 
     # ── Infos PN ──────────────────────────────────────────────────────────────
     active_df, excluded_df = _load_deca_rows(pn, module)
-    _render_pn_info(pn, active_df)
+    render_pn_info(pn, active_df)
     st.divider()
 
     if active_df.empty:
@@ -397,7 +171,7 @@ def _render_nav_view(module: str, mode: str):
     )
 
     # ── Table read-only ───────────────────────────────────────────────────────
-    _render_readonly_table(
+    render_readonly_table(
         active_df,
         show_svc=st.session_state["precheck_show_svc"],
         show_loc=st.session_state["precheck_show_loc"],
@@ -409,7 +183,7 @@ def _render_nav_view(module: str, mode: str):
     # ── Formulaires cascade ───────────────────────────────────────────────────
     forms = []
     for _, row in active_df.iterrows():
-        form_data = _render_deca_form(dict(row), mode)
+        form_data = render_deca_form(dict(row), mode, key_prefix="pc")
         forms.append(form_data)
 
     # ── Copie rapide multi-DECA ───────────────────────────────────────────────
@@ -437,7 +211,7 @@ def _render_nav_view(module: str, mode: str):
             st.success(f"{len(forms)} DECAs validés.")
             st.rerun()
 
-    _render_excluded(excluded_df)
+    render_excluded(excluded_df)
     st.divider()
 
     # ── Actions ───────────────────────────────────────────────────────────────
