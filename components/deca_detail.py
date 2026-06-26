@@ -134,7 +134,8 @@ def _render_decision_info(marquage: str):
 
 
 def _render_photos(marquage: str):
-    photos = _find_photos(marquage)
+    with st.spinner("Recherche des photos…"):
+        photos = _find_photos(marquage)
 
     st.markdown("#### Photos")
 
