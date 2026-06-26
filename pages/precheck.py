@@ -156,6 +156,13 @@ def _render_nav_view(module: str, mode: str):
     # ── Infos PN ──────────────────────────────────────────────────────────────
     active_df, excluded_df = _load_deca_rows(pn, module)
     render_pn_info(pn, active_df)
+
+    # Préchauffage de l'index photos en arrière-plan (cache 10 min)
+    from config import PHOTOS_DIR
+    from components.deca_detail import _build_photo_index
+    if PHOTOS_DIR and PHOTOS_DIR.exists():
+        _build_photo_index(str(PHOTOS_DIR))
+
     st.divider()
 
     if active_df.empty:
