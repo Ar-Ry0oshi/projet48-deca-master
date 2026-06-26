@@ -13,7 +13,7 @@ from components.pn_search import pn_search_widget
 from components.deca_detail import show_deca_detail
 from components.pn_info import render_pn_info
 from components.deca_hors_perimetre import render_excluded
-from components.deca_table import render_readonly_table, render_deca_form
+from components.deca_table import render_readonly_table, render_deca_table_editor
 from services import svc3_options, svc1_for_svc3, svc4_options
 
 
@@ -45,6 +45,7 @@ def _init_state():
 def _go_to_pn(pn_short: str, module: str):
     pns = queries.get_pn_list_for_module(module)
     st.session_state["precheck_module"] = module
+    st.session_state["sel_module"] = module  # force le selectbox widget
     if pn_short in pns:
         st.session_state["precheck_pn_idx"] = pns.index(pn_short)
     st.session_state["precheck_pn"] = pn_short
@@ -170,35 +171,40 @@ def _render_nav_view(module: str, mode: str):
         "Localisations", value=st.session_state["precheck_show_loc"]
     )
 
-    # ── Table read-only ───────────────────────────────────────────────────────
+    # ── Table read-only (cliquer sur une ligne ouvre la fiche) ──────────────
+    st.caption("Cliquer sur une ligne pour ouvrir la fiche détail.")
     render_readonly_table(
         active_df,
         show_svc=st.session_state["precheck_show_svc"],
         show_loc=st.session_state["precheck_show_loc"],
+        selectable=True,
+        key=f"tbl_{module}_{pn}",
     )
 
     st.divider()
     st.markdown(f"**Décisions** — {len(active_df)} DECA(s) à traiter")
 
-    # ── Formulaires cascade ───────────────────────────────────────────────────
-    forms = []
-    for _, row in active_df.iterrows():
-        form_data = render_deca_form(dict(row), mode, key_prefix="pc")
-        forms.append(form_data)
+    # ── Table de décisions ────────────────────────────────────────────────────
+    forms = render_deca_table_editor(active_df, mode, key_prefix="pc")
 
     # ── Copie rapide multi-DECA ───────────────────────────────────────────────
     if len(active_df) > 1:
         c1, c2, _ = st.columns([2, 2, 4])
         if c1.button("⬇ Copier Svc3 & Svc4 du 1er vers tous", use_container_width=True):
             first = forms[0]
-            for row in active_df.itertuples():
-                _save_deca(
-                    row.marquage, pn, module, mode,
-                    first["svc3"], first["svc1"], first["svc4"],
-                    first["pre_check"], first["decision"], first["commentaire"],
-                )
-            st.success(f"Service3={first['svc3']} / Service4={first['svc4']} appliqué à {len(forms)} DECAs.")
-            st.rerun()
+            if not first.get("svc3"):
+                st.error("Le premier DECA n'a pas de N.Service3 défini — remplissez-le d'abord.")
+            elif not first.get("svc1"):
+                st.error("Bâtiment non résolu pour le premier DECA.")
+            else:
+                for row in active_df.itertuples():
+                    _save_deca(
+                        row.marquage, pn, module, mode,
+                        first["svc3"], first["svc1"], first["svc4"],
+                        first["pre_check"], first["decision"], first["commentaire"],
+                    )
+                st.success(f"Service3={first['svc3']} / Service4={first['svc4']} appliqué à {len(forms)} DECAs.")
+                st.rerun()
 
         if c2.button("✓ Valider toutes les lignes", use_container_width=True):
             for f in forms:
@@ -243,26 +249,14 @@ def _render_nav_view(module: str, mode: str):
         st.session_state["precheck_pn_idx"] = min(len(pns) - 1, idx + 1)
         st.rerun()
 
-    col_hint.caption("◄ ► pour naviguer entre PNs")
-
-    # ── Voir détail ───────────────────────────────────────────────────────────
-    marquages = active_df["marquage"].tolist()
-    st.divider()
-    col_sel, col_btn, _ = st.columns([2, 1, 3])
-    selected = col_sel.selectbox(
-        "Voir détail", options=marquages,
-        key=f"detail_sel_{module}_{pn}",
-        label_visibility="collapsed",
-    )
-    if col_btn.button("🔍 Ouvrir", key=f"detail_btn_{module}_{pn}", use_container_width=True):
-        show_deca_detail(selected)
+    col_hint.caption("◄ ► pour naviguer entre PNs · cliquer sur la table pour ouvrir la fiche")
 
 
 # ── Vue liste plate (uniques) ─────────────────────────────────────────────────
 
 def _render_flat_view(module: str, mode: str):
     all_rows = queries.get_tools_for_module(module)
-    unique_pns = [r for r in all_rows if r["complexity_flag"] == "unique"]
+    unique_pns = [dict(r) for r in all_rows if r["complexity_flag"] == "unique"]
 
     if not unique_pns:
         st.info(f"Aucun PN unique sur {module}.")

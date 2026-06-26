@@ -18,6 +18,13 @@ st.set_page_config(
 
 init_schema()
 
+# Masque la navigation automatique Streamlit multipage (on utilise le radio ci-dessous)
+st.markdown("""
+<style>
+[data-testid="stSidebarNav"] { display: none; }
+</style>
+""", unsafe_allow_html=True)
+
 # ── Sidebar navigation ────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### DECA_Master")
