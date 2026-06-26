@@ -25,7 +25,8 @@ _STATUS_REUNION  = ["VALIDÉ", "EN ATTENTE"]
 _PRECHECK_OPTS   = [""] + PRECHECK_FLAGS[:3]
 
 # Largeurs des colonnes (ligne info / ligne saisie)
-_W_INFO  = [1.2, 2.5, 2.5, 2.0]          # Marquage | Réf | Svc3 actuel | État
+# Marquage | Svc3 | Svc4 | Svc5 | Loc1 | Loc2 | Loc3 | Loc4 | Loc5
+_W_INFO  = [1.4, 1.0, 0.9, 0.9, 0.75, 0.75, 0.75, 0.75, 0.75]
 _W_EDIT  = [0.7, 2.0, 2.0, 1.0, 1.0, 2.5] # Bât | N.Svc3 | N.Svc4 | Pre | Déc | Comm
 
 
@@ -108,7 +109,7 @@ def render_deca_table_editor(
 
     # ── En-têtes ─────────────────────────────────────────────────────────────
     h1 = st.columns(_W_INFO)
-    for col, lbl in zip(h1, ["Marquage", "Référence", "Svc3 actuel", "État"]):
+    for col, lbl in zip(h1, ["Marquage", "Svc 3", "Svc 4", "Svc 5", "Loc 1", "Loc 2", "Loc 3", "Loc 4", "Loc 5"]):
         col.caption(f"**{lbl}**")
     h2 = st.columns(_W_EDIT)
     for col, lbl in zip(h2, ["Bât.", "N.Service3", "N.Service4", "Pré-check", "Décision", "Commentaire"]):
@@ -126,16 +127,18 @@ def render_deca_table_editor(
 
         # ── Ligne 1 : infos ──────────────────────────────────────────────────
         r1 = st.columns(_W_INFO)
-        if r1[0].button(
-            f"🔍 {'🔒 ' if locked else ''}{marquage}",
-            key=f"{key_prefix}_{marquage}_open",
-            use_container_width=True,
-        ):
+        btn_lbl = f"{'🔒 ' if locked else '🔍 '}{marquage}"
+        if r1[0].button(btn_lbl, key=f"{key_prefix}_{marquage}_open", use_container_width=True):
             st.session_state[detail_key] = marquage
             st.rerun()
-        r1[1].markdown(f"*{(row.get('ref_constructeur') or '—')[:30]}*")
-        r1[2].caption(row.get("service3") or "—")
-        r1[3].caption(row.get("etat") or "—")
+        r1[1].caption(row.get("service3") or "—")
+        r1[2].caption(row.get("service4") or "—")
+        r1[3].caption(row.get("service5") or "—")
+        r1[4].caption(row.get("localisation1") or "—")
+        r1[5].caption(row.get("localisation2") or "—")
+        r1[6].caption(row.get("localisation3") or "—")
+        r1[7].caption(row.get("localisation4") or "—")
+        r1[8].caption(row.get("localisation5") or "—")
 
         # ── Ligne 2 : saisie / affichage ─────────────────────────────────────
         r2 = st.columns(_W_EDIT)

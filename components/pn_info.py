@@ -19,16 +19,19 @@ def render_pn_info(pn_short: str, active_df: pd.DataFrame):
     n_active = len(active_df)
     n_modules = len(modules)
 
-    chips = st.columns([1, 1, 1, 1, 3])
-    chips[0].metric("Modules", ", ".join(modules) if modules else "—")
-    chips[1].metric("ASSY flag", assy)
-    chips[2].metric("DECAs actifs", n_active)
+    col_mod, col_assy, col_deca, col_warn = st.columns([3, 1.5, 1, 2])
+
+    col_mod.markdown(f"**Modules** : {', '.join(modules) if modules else '—'}")
+
+    col_assy.caption("**ASSY flag**")
+    col_assy.caption(assy)
+
+    col_deca.metric("DECAs", n_active)
+
     if n_modules > 1 and n_active < n_modules:
-        chips[3].warning(f"⚠ {n_modules} modules, {n_active} DECAs")
+        col_warn.warning(f"⚠ {n_modules} modules, {n_active} DECAs")
     elif n_modules > 1:
-        chips[3].info(f"ℹ {n_modules} modules")
-    else:
-        chips[3].empty()
+        col_warn.info(f"ℹ {n_modules} modules")
 
     if mod_source == "conflict":
         st.caption(f"⚠️ Conflit sources — {conflict}")
@@ -36,5 +39,8 @@ def render_pn_info(pn_short: str, active_df: pd.DataFrame):
         st.caption("Source : Panoply uniquement (absent du DMC)")
     elif mod_source == "esm_only":
         st.caption("Source : DMC/ESM uniquement (absent de Panoply)")
+
     if opcodes:
-        st.caption(f"ICV : {opcodes}")
+        with st.expander(f"ICV ({opcodes.count('|') + 1} code(s))", expanded=False):
+            for part in opcodes.split(" | "):
+                st.caption(part.strip())
