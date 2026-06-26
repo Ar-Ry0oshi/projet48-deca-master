@@ -13,35 +13,36 @@ from db import queries
 from config import PHOTOS_DIR
 
 
-# ── Recherche des photos ──────────────────────────────────────────────────────
+# ── Index photos (scanné une fois, mis en cache) ──────────────────────────────
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _build_photo_index(folder_str: str) -> list[str]:
+    """Retourne la liste de tous les chemins .jpg du dossier (mis en cache 10 min)."""
+    folder = Path(folder_str)
+    paths = []
+    for ext in ("*.jpg", "*.JPG", "*.jpeg", "*.JPEG"):
+        paths.extend(str(f) for f in sorted(folder.glob(ext)))
+    return paths
+
 
 def _find_photos(marquage: str) -> list[Path]:
     """
-    Cherche tous les .jpg dont le nom contient le marquage (5 chiffres).
-    Exemples de noms matchés :
-        06019.jpg
-        956A1172G01_06019.jpg
-        956A1192G01 - 06019.jpg
+    Cherche les .jpg dont le nom contient le marquage (5 chiffres).
+    Utilise un index mis en cache pour éviter de rescanner le dossier.
     """
-    folder = PHOTOS_DIR
-    if not folder or not folder.exists():
+    if not PHOTOS_DIR or not PHOTOS_DIR.exists():
         return []
 
-    results = []
-    for f in sorted(folder.glob("*.jpg")) + sorted(folder.glob("*.JPG")):
-        # Le marquage doit apparaître comme séquence de chiffres dans le stem
-        if marquage in f.stem.replace(" ", "").replace("-", "").replace("_", ""):
-            results.append(f)
-        elif marquage in f.stem:
-            results.append(f)
+    all_paths = _build_photo_index(str(PHOTOS_DIR))
 
-    # Dédoublonner
-    seen, deduped = set(), []
-    for f in results:
-        if f not in seen:
+    results, seen = [], set()
+    for p in all_paths:
+        f = Path(p)
+        stem_norm = f.stem.replace(" ", "").replace("-", "").replace("_", "")
+        if (marquage in stem_norm or marquage in f.stem) and f not in seen:
             seen.add(f)
-            deduped.append(f)
-    return deduped
+            results.append(f)
+    return results
 
 
 # ── Sections du modal ─────────────────────────────────────────────────────────
@@ -134,14 +135,18 @@ def _render_decision_info(marquage: str):
 
 
 def _render_photos(marquage: str):
+    if not PHOTOS_DIR or not PHOTOS_DIR.exists():
+        st.markdown("#### Photos")
+        st.caption("Dossier photos non accessible (réseau non connecté).")
+        return
+
     with st.spinner("Recherche des photos…"):
         photos = _find_photos(marquage)
 
     st.markdown("#### Photos")
 
     if not photos:
-        folder_str = str(PHOTOS_DIR) if PHOTOS_DIR else "dossier non configuré"
-        st.caption(f"Aucune photo trouvée pour le marquage `{marquage}` dans `{folder_str}`.")
+        st.info(f"Aucune photo disponible pour `{marquage}` dans le dossier réseau.", icon="📷")
         return
 
     st.caption(f"{len(photos)} photo(s) trouvée(s).")

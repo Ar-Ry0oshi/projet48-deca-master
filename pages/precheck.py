@@ -13,7 +13,7 @@ from components.pn_search import pn_search_widget
 from components.deca_detail import show_deca_detail
 from components.pn_info import render_pn_info
 from components.deca_hors_perimetre import render_excluded
-from components.deca_table import render_readonly_table, render_deca_form
+from components.deca_table import render_readonly_table, render_deca_table_editor
 from services import svc3_options, svc1_for_svc3, svc4_options
 
 
@@ -45,6 +45,7 @@ def _init_state():
 def _go_to_pn(pn_short: str, module: str):
     pns = queries.get_pn_list_for_module(module)
     st.session_state["precheck_module"] = module
+    st.session_state["sel_module"] = module  # force le selectbox widget
     if pn_short in pns:
         st.session_state["precheck_pn_idx"] = pns.index(pn_short)
     st.session_state["precheck_pn"] = pn_short
@@ -183,11 +184,8 @@ def _render_nav_view(module: str, mode: str):
     st.divider()
     st.markdown(f"**Décisions** — {len(active_df)} DECA(s) à traiter")
 
-    # ── Formulaires cascade ───────────────────────────────────────────────────
-    forms = []
-    for _, row in active_df.iterrows():
-        form_data = render_deca_form(dict(row), mode, key_prefix="pc")
-        forms.append(form_data)
+    # ── Table de décisions ────────────────────────────────────────────────────
+    forms = render_deca_table_editor(active_df, mode, key_prefix="pc")
 
     # ── Copie rapide multi-DECA ───────────────────────────────────────────────
     if len(active_df) > 1:

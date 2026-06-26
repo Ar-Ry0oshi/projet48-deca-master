@@ -15,7 +15,7 @@ from components.pn_search import pn_search_widget
 from components.deca_detail import show_deca_detail
 from components.pn_info import render_pn_info
 from components.deca_hors_perimetre import render_excluded
-from components.deca_table import render_readonly_table, render_deca_form, _SVC3_OPTS
+from components.deca_table import render_readonly_table, render_deca_table_editor
 from services import svc3_options, svc1_for_svc3, svc4_options, svc2_for_svc3, svc1_to_svc4_all
 
 
@@ -41,6 +41,7 @@ def _init_state():
 def _go_to_pn(pn_short: str, module: str):
     pns = queries.get_pn_list_for_module(module)
     st.session_state["reunion_module"] = module
+    st.session_state["reu_sel_module"] = module  # force le selectbox widget
     if pn_short in pns:
         st.session_state["reunion_pn_idx"] = pns.index(pn_short)
     st.session_state["reunion_pn"] = pn_short
@@ -156,9 +157,7 @@ def _render_nav_view(module: str):
     st.divider()
     st.markdown(f"**Décisions** — {len(active_df)} DECA(s)")
 
-    forms = []
-    for _, row in active_df.iterrows():
-        forms.append(render_deca_form(dict(row), mode="reunion", key_prefix="reu"))
+    forms = render_deca_table_editor(active_df, mode="reunion", key_prefix="reu")
 
     # Copie rapide multi-DECA
     if len(active_df) > 1:
