@@ -131,6 +131,25 @@ def upsert_decision(
     _log_change(marquage, pn_short, "decision", existing["decision"] if existing else None, decision, now, updated_by)
 
 
+def reset_decision(marquage: str, reset_by: str = "user") -> bool:
+    """
+    Déverrouille une décision VALIDÉ/EN ATTENTE en la repassant à EN COURS.
+    Retourne True si le reset a eu lieu, False si la décision n'existait pas.
+    """
+    existing = get_decision(marquage)
+    if not existing:
+        return False
+    now = datetime.now(timezone.utc).isoformat()
+    db.execute("""
+        UPDATE decisions
+        SET decision = 'EN COURS', updated_at = ?, updated_by = ?
+        WHERE marquage = ?
+    """, (now, reset_by, marquage))
+    _log_change(marquage, existing["pn_short"], "decision",
+                existing["decision"], "EN COURS", now, reset_by)
+    return True
+
+
 def get_decisions_for_export(module: str | None = None) -> list:
     if module:
         return db.fetchall("""

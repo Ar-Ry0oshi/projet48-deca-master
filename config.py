@@ -1,10 +1,21 @@
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / "data"
 DB_PATH = ROOT / "decisions.db"
 EXPORTS_DIR = ROOT / "exports"
 LOGS_DIR = ROOT / "logs"
+
+# Dossier photos DECA sur le réseau Safran
+# UNC path Windows : \\nas01.one.ad\DECA\ssb\Foto Toolings
+# Sur Linux (dev) : monter le partage sur /mnt/deca_photos si besoin
+_PHOTOS_UNC = r"\\nas01.one.ad\DECA\ssb\Foto Toolings"
+if sys.platform == "win32":
+    PHOTOS_DIR: Path | None = Path(_PHOTOS_UNC)
+else:
+    _linux_mount = Path("/mnt/deca_photos")
+    PHOTOS_DIR = _linux_mount if _linux_mount.exists() else None
 
 # Expected source filenames (flexible — matched by pattern in reload_sources)
 SRC_DECA_PATTERNS = ["*DECA*.csv", "*deca*.csv"]
