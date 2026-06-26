@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from config import MODULES, SERVICE_CASCADE, PRECHECK_FLAGS, ROW_COLORS
 from db import queries
 from components.pn_search import pn_search_widget
+from components.deca_detail import show_deca_detail
 
 
 # ── Constantes ────────────────────────────────────────────────────────────────
@@ -427,6 +428,21 @@ def _render_nav_view(module: str, mode: str):
 
     col_hint.caption("Raccourcis : ◄ ► pour naviguer entre PNs")
 
+    # ── Voir détail DECA ──────────────────────────────────────────────────────
+    if active_df is not None and not active_df.empty:
+        marquages = active_df["marquage"].tolist()
+        st.divider()
+        col_sel, col_btn, _ = st.columns([2, 1, 3])
+        selected = col_sel.selectbox(
+            "Voir détail d'un DECA",
+            options=marquages,
+            key=f"detail_sel_{module}_{pn}",
+            label_visibility="collapsed",
+            placeholder="Choisir un marquage…",
+        )
+        if col_btn.button("🔍 Ouvrir", key=f"detail_btn_{module}_{pn}", use_container_width=True):
+            show_deca_detail(selected)
+
 
 # ── Vue liste plate (uniques) ─────────────────────────────────────────────────
 
@@ -506,6 +522,21 @@ def _render_flat_view(module: str, mode: str):
             saved += 1
         st.success(f"{saved} décisions sauvegardées.")
         st.rerun()
+
+    # ── Voir détail DECA ──────────────────────────────────────────────────────
+    all_marquages = [r["marquage"] for r in unique_pns]
+    if all_marquages:
+        st.divider()
+        col_sel, col_btn, _ = st.columns([2, 1, 3])
+        selected_flat = col_sel.selectbox(
+            "Voir détail d'un DECA",
+            options=all_marquages,
+            key=f"detail_flat_sel_{module}",
+            label_visibility="collapsed",
+            placeholder="Choisir un marquage…",
+        )
+        if col_btn.button("🔍 Ouvrir", key=f"detail_flat_btn_{module}", use_container_width=True):
+            show_deca_detail(selected_flat)
 
 
 # ── Point d'entrée ────────────────────────────────────────────────────────────
