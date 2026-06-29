@@ -230,14 +230,23 @@ def _load_dmc(path: Path) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
 # ---------------------------------------------------------------------------
 
 def _load_icv(path: Path) -> dict[str, str]:
-    """Returns {ic_code: information_name}."""
-    df = pd.read_excel(path, dtype=str)
+    """Returns {ic_code: information_name}.
+
+    Tries the sheet named 'ICV_Translation' first, then falls back to the
+    first sheet — handles workbooks where that sheet is not sheet 0.
+    """
+    xl = pd.ExcelFile(path)
+    target = next(
+        (s for s in xl.sheet_names if "icv" in s.lower() or "translation" in s.lower()),
+        xl.sheet_names[0],
+    )
+    df = xl.parse(target, dtype=str)
     df.columns = df.columns.str.strip()
 
     ic_col = next((c for c in df.columns if "ic" in c.lower()), None)
     name_col = next((c for c in df.columns if "information" in c.lower() or "name" in c.lower()), None)
     if not ic_col or not name_col:
-        log.warning("ICV file column detection failed: %s", list(df.columns))
+        log.warning("ICV file column detection failed (sheet=%s): %s", target, list(df.columns))
         return {}
 
     result = {}

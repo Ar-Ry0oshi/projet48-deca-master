@@ -16,20 +16,7 @@ _MOTEURS: dict[str, int] = {
 }
 
 
-def _motor_table(modules: list[str]) -> pd.DataFrame | None:
-    """Retourne un df Module / Moteurs / % pour les modules connus."""
-    rows = [(m, _MOTEURS.get(m, 0)) for m in modules if m in _MOTEURS]
-    if not rows:
-        return None
-    total = sum(n for _, n in rows)
-    return pd.DataFrame(
-        [{"Module": m, "Moteurs": n, "%": f"{100*n/total:.0f}%" if total else "—"}
-         for m, n in rows]
-    )
-
-
 def render_pn_info(pn_short: str, active_df: pd.DataFrame):
-    """Affiche modules, ASSY flag, nb DECAs actifs, source conflict, opcodes ICV, ratio moteurs."""
     if active_df.empty:
         return
     row = active_df.iloc[0]
@@ -43,15 +30,10 @@ def render_pn_info(pn_short: str, active_df: pd.DataFrame):
 
     # ── Ligne principale ──────────────────────────────────────────────────────
     col_mod, col_assy, col_deca, col_warn = st.columns([4, 1.5, 0.8, 2])
-
-    # Modules — sur plusieurs lignes si long
-    mod_text = ", ".join(modules) if modules else "—"
-    col_mod.markdown(f"<small><b>Modules :</b> {mod_text}</small>", unsafe_allow_html=True)
-
+    col_mod.markdown(f"<small><b>Modules :</b> {', '.join(modules) if modules else '—'}</small>",
+                     unsafe_allow_html=True)
     col_assy.markdown(f"<small><b>ASSY</b><br>{assy}</small>", unsafe_allow_html=True)
-
     col_deca.metric("DECAs", n_active)
-
     if n_modules > 1 and n_active < n_modules:
         col_warn.warning(f"⚠ {n_modules} modules, {n_active} DECAs")
     elif n_modules > 1:
@@ -64,27 +46,34 @@ def render_pn_info(pn_short: str, active_df: pd.DataFrame):
     elif mod_source == "esm_only":
         st.caption("Source : DMC/ESM uniquement")
 
-    # ── ICV ───────────────────────────────────────────────────────────────────
-    if opcodes:
-        n_codes = opcodes.count("|") + 1
-        with st.expander(f"ICV — {n_codes} code(s)", expanded=False):
-            for part in opcodes.split(" | "):
-                st.caption(part.strip())
+    # ── ICV (gauche) + Moteurs (droite) ──────────────────────────────────────
+    mot_rows = [(m, _MOTEURS.get(m, 0)) for m in modules if m in _MOTEURS]
+    show_motors = bool(mot_rows)
+    show_icv = bool(opcodes)
 
-    # ── Proportion moteurs ────────────────────────────────────────────────────
-    df_mot = _motor_table(modules)
-    if df_mot is not None:
-        with st.expander(
-            f"Proportion moteurs — {df_mot['Moteurs'].sum()} moteurs impactés",
-            expanded=(n_modules > 1),
-        ):
-            st.dataframe(
-                df_mot,
-                column_config={
-                    "Module":  st.column_config.TextColumn("Module",  width="small"),
-                    "Moteurs": st.column_config.NumberColumn("Moteurs", width="small"),
-                    "%":       st.column_config.TextColumn("%",       width="small"),
-                },
-                hide_index=True,
-                use_container_width=False,
-            )
+    if show_icv or show_motors:
+        col_icv, col_mot = st.columns([3, 2])
+
+        if show_icv:
+            with col_icv:
+                st.caption("**Codes ICV**")
+                for part in opcodes.split(" | "):
+                    st.caption(f"• {part.strip()}")
+
+        if show_motors:
+            total = sum(n for _, n in mot_rows)
+            df_mot = pd.DataFrame([
+                {"Module": m, "Nb": n, "%": f"{100*n/total:.0f}%" if total else "—"}
+                for m, n in mot_rows
+            ])
+            with col_mot:
+                st.dataframe(
+                    df_mot,
+                    column_config={
+                        "Module": st.column_config.TextColumn("Module", width="small"),
+                        "Nb":     st.column_config.NumberColumn("Nb",   width="small"),
+                        "%":      st.column_config.TextColumn("%",      width="small"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                )
