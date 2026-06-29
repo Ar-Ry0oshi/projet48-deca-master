@@ -125,40 +125,47 @@ def render_deca_table_editor(
         svc1_saved = dec.get("n_service1") or ""
         bldg_saved = _SVC1_TO_BLDG.get(svc1_saved, "")
 
-        # DECA déjà placé dans les données source (service3 non vide)
         cur_svc3 = row.get("service3") or ""
-        already_placed = bool(cur_svc3)
+        cur_svc4 = row.get("service4") or ""
 
-        # Pré-remplir N.Service3 avec le service actuel si aucune décision prise
+        # Pré-remplir N.Service3/4 avec les services actuels si aucune décision prise
         n_svc3_init = dec.get("n_service3") or ""
-        if not n_svc3_init and already_placed and not dec:
-            n_svc3_init = cur_svc3
-            svc1_for_init = svc1_for_svc3(cur_svc3)
-            bldg_saved = _SVC1_TO_BLDG.get(svc1_for_init[0], "") if svc1_for_init else ""
-            if svc1_for_init:
-                svc1_saved = svc1_for_init[0]
+        n_svc4_init = dec.get("n_service4") or ""
+        if not dec:
+            if cur_svc3:
+                n_svc3_init = cur_svc3
+                svc1_for_init = svc1_for_svc3(cur_svc3)
+                if svc1_for_init:
+                    svc1_saved = svc1_for_init[0]
+                    bldg_saved = _SVC1_TO_BLDG.get(svc1_saved, "")
+            if cur_svc4:
+                n_svc4_init = cur_svc4
 
-        # Indicateur visuel : ◈ = déjà placé (service dans les données source)
+        # DECA sans nouveau service = à traiter (◈), avec service = déjà fait (en bas)
+        has_new_svc = bool(n_svc3_init and dec)   # décision existante avec svc3
+        needs_treatment = not has_new_svc and not locked
+
         if locked:
             mq_display = f"🔒 {marquage}"
-        elif already_placed:
-            mq_display = f"◈ {marquage}"
+        elif needs_treatment:
+            mq_display = f"◈ {marquage}"   # à traiter en priorité
         else:
-            mq_display = marquage
+            mq_display = marquage           # déjà rempli → ira en bas
 
         meta.append({
-            "marquage":      marquage,
-            "locked":        locked,
-            "already_placed": already_placed,
-            "cur_svc3":      cur_svc3,
-            "svc1_saved":    svc1_saved,
-            "pre_saved":     dec.get("pre_check") or "",
+            "marquage":        marquage,
+            "locked":          locked,
+            "needs_treatment": needs_treatment,
+            "cur_svc3":        cur_svc3,
+            "svc1_saved":      svc1_saved,
+            "pre_saved":       dec.get("pre_check") or "",
         })
 
         display_rows.append({
+            "_sort":       0 if needs_treatment else (2 if locked else 1),
             "Marquage":    mq_display,
             "Svc 3 act.":  cur_svc3,
-            "Svc 4 act.":  row.get("service4") or "",
+            "Svc 4 act.":  cur_svc4,
             "Svc 5 act.":  row.get("service5") or "",
             "Loc 1":       row.get("localisation1") or "",
             "Loc 2":       row.get("localisation2") or "",
@@ -167,22 +174,34 @@ def render_deca_table_editor(
             "Loc 5":       row.get("localisation5") or "",
             "Bât.":        bldg_saved,
             "N.Service3":  n_svc3_init,
-            "N.Service4":  dec.get("n_service4") or "",
+            "N.Service4":  n_svc4_init,
             "Pré-check":   dec.get("pre_check") or "",
             "Décision":    dec_val,
             "Commentaire": dec.get("commentaire") or "",
         })
 
-    df = pd.DataFrame(display_rows)
+    # ── Tri : à traiter (◈) en haut, déjà fait au milieu, verrouillés en bas ──
+    combined = sorted(zip(display_rows, meta), key=lambda x: x[0]["_sort"])
+    display_rows = [d for d, _ in combined]
+    meta         = [m for _, m in combined]
+
+    display_cols = [c for c in display_rows[0] if c != "_sort"]
+    df = pd.DataFrame(display_rows)[display_cols]
 
     # Clé stable par PN (évite que les edits d'un PN contaminent le suivant)
     pn_key = active_df["pn_short"].iloc[0] if "pn_short" in active_df.columns else "x"
     editor_key = f"{key_prefix}_editor_{pn_key}"
 
     # ── Légende indicateurs ───────────────────────────────────────────────────
-    n_placed = sum(1 for m in meta if m["already_placed"] and not m["locked"])
-    if n_placed:
-        st.caption(f"◈ = DECA déjà placé dans la source ({n_placed}) — N.Service3 pré-rempli avec le service actuel")
+    n_todo = sum(1 for m in meta if m["needs_treatment"])
+    n_done = sum(1 for m in meta if not m["needs_treatment"] and not m["locked"])
+    parts = []
+    if n_todo:
+        parts.append(f"◈ {n_todo} à traiter")
+    if n_done:
+        parts.append(f"{n_done} déjà remplis (en bas, N.Svc3/4 pré-remplis depuis source)")
+    if parts:
+        st.caption(" · ".join(parts))
 
     # ── Colonnes figées (read-only) ───────────────────────────────────────────
     fixed_cols = ["Marquage", "Svc 3 act.", "Svc 4 act.", "Svc 5 act.",
