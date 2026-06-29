@@ -169,26 +169,6 @@ def _render_nav_view(module: str, mode: str):
         st.info("Aucun DECA actif pour ce PN dans ce module.")
         return
 
-    # ── Options affichage ─────────────────────────────────────────────────────
-    opt1, opt2, _, _ = st.columns([1, 1, 1, 3])
-    st.session_state["precheck_show_svc"] = opt1.checkbox(
-        "Services actuels", value=st.session_state["precheck_show_svc"]
-    )
-    st.session_state["precheck_show_loc"] = opt2.checkbox(
-        "Localisations", value=st.session_state["precheck_show_loc"]
-    )
-
-    # ── Table read-only (cliquer sur une ligne ouvre la fiche) ──────────────
-    st.caption("Cliquer sur une ligne pour ouvrir la fiche détail.")
-    render_readonly_table(
-        active_df,
-        show_svc=st.session_state["precheck_show_svc"],
-        show_loc=st.session_state["precheck_show_loc"],
-        selectable=True,
-        key=f"tbl_{module}_{pn}",
-    )
-
-    st.divider()
     st.markdown(f"**Décisions** — {len(active_df)} DECA(s) à traiter")
 
     # ── Table de décisions ────────────────────────────────────────────────────

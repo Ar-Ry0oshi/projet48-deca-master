@@ -153,8 +153,6 @@ def _render_nav_view(module: str):
         st.info("Aucun DECA actif pour ce PN dans ce module.")
         return
 
-    render_readonly_table(active_df)
-    st.divider()
     st.markdown(f"**Décisions** — {len(active_df)} DECA(s)")
 
     forms = render_deca_table_editor(active_df, mode="reunion", key_prefix="reu")

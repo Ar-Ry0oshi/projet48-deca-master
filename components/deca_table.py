@@ -24,11 +24,6 @@ _STATUS_PRECHECK = ["EN COURS", "PRÉ-CHECK"]
 _STATUS_REUNION  = ["VALIDÉ", "EN ATTENTE"]
 _PRECHECK_OPTS   = [""] + PRECHECK_FLAGS[:3]
 
-# Largeurs des colonnes (ligne info / ligne saisie)
-# Marquage | Svc3 | Svc4 | Svc5 | Loc1 | Loc2 | Loc3 | Loc4 | Loc5
-_W_INFO  = [1.4, 1.0, 0.9, 0.9, 0.75, 0.75, 0.75, 0.75, 0.75]
-_W_EDIT  = [0.7, 2.0, 2.0, 1.0, 1.0, 2.5] # Bât | N.Svc3 | N.Svc4 | Pre | Déc | Comm
-
 
 # ── Table read-only (cliquable pour ouvrir fiche) ─────────────────────────────
 
@@ -55,7 +50,7 @@ def render_readonly_table(
             cols.append(k)
             cfg[k] = st.column_config.TextColumn(f"Svc {i}", width="small")
     if show_loc:
-        for i in range(1, 4):
+        for i in range(1, 6):
             k = f"localisation{i}"
             cols.append(k)
             cfg[k] = st.column_config.TextColumn(f"Loc {i}", width="small")
@@ -80,7 +75,7 @@ def render_readonly_table(
         st.dataframe(display_df, column_config=cfg, hide_index=True, use_container_width=True)
 
 
-# ── Éditeur de décisions (2 lignes par DECA) ─────────────────────────────────
+# ── Éditeur de décisions — tableau Excel-like ─────────────────────────────────
 
 def render_deca_table_editor(
     active_df: pd.DataFrame,
@@ -88,9 +83,9 @@ def render_deca_table_editor(
     key_prefix: str = "pc",
 ) -> list[dict]:
     """
-    Affiche tous les DECAs d'un PN en 2 lignes par DECA :
-      - Ligne 1 (info) : [🔍 Marquage] | Référence | Svc3 actuel | État
-      - Ligne 2 (edit) : Bât (auto) | N.Service3 | N.Service4 | Pré-check | Décision | Commentaire
+    Affiche les DECAs d'un PN dans un data_editor avec :
+      - Colonnes info (read-only) : Marquage | Svc3 act. | Svc4 act. | Svc5 act. | Loc 1-5
+      - Colonnes saisie (edit)    : N.Service3 | Bât. | N.Service4 | Pré-check | Décision | Commentaire
     Retourne une liste de dicts pour les fonctions de sauvegarde.
     """
     from components.deca_detail import show_deca_detail
@@ -107,155 +102,164 @@ def render_deca_table_editor(
         st.session_state[detail_key] = None
         show_deca_detail(mq_to_open)
 
-    # ── En-têtes ─────────────────────────────────────────────────────────────
-    h1 = st.columns(_W_INFO)
-    for col, lbl in zip(h1, ["Marquage", "Svc 3", "Svc 4", "Svc 5", "Loc 1", "Loc 2", "Loc 3", "Loc 4", "Loc 5"]):
-        col.caption(f"**{lbl}**")
-    h2 = st.columns(_W_EDIT)
-    for col, lbl in zip(h2, ["Bât.", "N.Service3", "N.Service4", "Pré-check", "Décision", "Commentaire"]):
-        col.caption(f"**{lbl}**")
-    st.markdown('<hr style="margin:2px 0 6px 0; border-color:#ccc;">', unsafe_allow_html=True)
+    # ── Construire les lignes ─────────────────────────────────────────────────
+    meta: list[dict] = []   # métadonnées non affichées
+    display_rows: list[dict] = []
 
-    forms: list[dict] = []
-
-    for i, (_, row) in enumerate(active_df.iterrows()):
+    for _, row in active_df.iterrows():
         marquage = row["marquage"]
         dec = queries.get_decision(marquage)
         dec = dict(dec) if dec else {}
         locked = dec.get("decision") in ("VALIDÉ", "EN ATTENTE")
+
+        if mode == "precheck":
+            dec_val = dec.get("decision") or "EN COURS"
+            if dec_val not in _STATUS_PRECHECK:
+                dec_val = "EN COURS"
+        else:
+            dec_val = dec.get("decision") or "VALIDÉ"
+            if dec_val not in _STATUS_REUNION:
+                dec_val = "VALIDÉ"
+
+        # Bâtiment affiché depuis décision sauvegardée
         svc1_saved = dec.get("n_service1") or ""
+        bldg_saved = _SVC1_TO_BLDG.get(svc1_saved, "")
 
-        # ── Ligne 1 : infos ──────────────────────────────────────────────────
-        r1 = st.columns(_W_INFO)
-        btn_lbl = f"{'🔒 ' if locked else '🔍 '}{marquage}"
-        if r1[0].button(btn_lbl, key=f"{key_prefix}_{marquage}_open", use_container_width=True):
-            st.session_state[detail_key] = marquage
-            st.rerun()
-        r1[1].caption(row.get("service3") or "—")
-        r1[2].caption(row.get("service4") or "—")
-        r1[3].caption(row.get("service5") or "—")
-        r1[4].caption(row.get("localisation1") or "—")
-        r1[5].caption(row.get("localisation2") or "—")
-        r1[6].caption(row.get("localisation3") or "—")
-        r1[7].caption(row.get("localisation4") or "—")
-        r1[8].caption(row.get("localisation5") or "—")
+        meta.append({
+            "marquage":    marquage,
+            "locked":      locked,
+            "svc1_saved":  svc1_saved,
+            "pre_saved":   dec.get("pre_check") or "",
+        })
 
-        # ── Ligne 2 : saisie / affichage ─────────────────────────────────────
-        r2 = st.columns(_W_EDIT)
+        display_rows.append({
+            "Marquage":    f"🔒 {marquage}" if locked else marquage,
+            "Svc 3 act.":  row.get("service3") or "",
+            "Svc 4 act.":  row.get("service4") or "",
+            "Svc 5 act.":  row.get("service5") or "",
+            "Loc 1":       row.get("localisation1") or "",
+            "Loc 2":       row.get("localisation2") or "",
+            "Loc 3":       row.get("localisation3") or "",
+            "Loc 4":       row.get("localisation4") or "",
+            "Loc 5":       row.get("localisation5") or "",
+            "N.Service3":  dec.get("n_service3") or "",
+            "Bât.":        bldg_saved,
+            "N.Service4":  dec.get("n_service4") or "",
+            "Pré-check":   dec.get("pre_check") or "",
+            "Décision":    dec_val,
+            "Commentaire": dec.get("commentaire") or "",
+        })
+
+    df = pd.DataFrame(display_rows)
+
+    # Clé stable par PN (évite que les edits d'un PN contaminent le suivant)
+    pn_key = active_df["pn_short"].iloc[0] if "pn_short" in active_df.columns else "x"
+    editor_key = f"{key_prefix}_editor_{pn_key}"
+
+    # ── Colonnes figées (read-only) ───────────────────────────────────────────
+    fixed_cols = ["Marquage", "Svc 3 act.", "Svc 4 act.", "Svc 5 act.",
+                  "Loc 1", "Loc 2", "Loc 3", "Loc 4", "Loc 5", "Bât."]
+
+    # En mode precheck : Décision est calculée auto ; en réunion : Pré-check est figé
+    if mode == "precheck":
+        fixed_cols.append("Décision")
+    else:
+        fixed_cols.append("Pré-check")
+
+    # ── Config colonnes ───────────────────────────────────────────────────────
+    cfg = {
+        "Marquage":    st.column_config.TextColumn("Marquage",    disabled=True, width="small"),
+        "Svc 3 act.":  st.column_config.TextColumn("Svc 3 act.", disabled=True, width="small"),
+        "Svc 4 act.":  st.column_config.TextColumn("Svc 4 act.", disabled=True, width="small"),
+        "Svc 5 act.":  st.column_config.TextColumn("Svc 5 act.", disabled=True, width="small"),
+        "Loc 1":       st.column_config.TextColumn("Loc 1",      disabled=True, width="small"),
+        "Loc 2":       st.column_config.TextColumn("Loc 2",      disabled=True, width="small"),
+        "Loc 3":       st.column_config.TextColumn("Loc 3",      disabled=True, width="small"),
+        "Loc 4":       st.column_config.TextColumn("Loc 4",      disabled=True, width="small"),
+        "Loc 5":       st.column_config.TextColumn("Loc 5",      disabled=True, width="small"),
+        "N.Service3":  st.column_config.SelectboxColumn(
+                           "N.Service3 ✏", options=_SVC3_OPTS, required=False, width="medium"
+                       ),
+        "Bât.":        st.column_config.TextColumn("Bât.",       disabled=True, width="small"),
+        "N.Service4":  st.column_config.SelectboxColumn(
+                           "N.Service4 ✏", options=[""] + svc4_all, required=False, width="medium"
+                       ),
+        "Pré-check":   st.column_config.SelectboxColumn(
+                           "Pré-check ✏", options=_PRECHECK_OPTS, required=False, width="small"
+                       ) if mode == "precheck" else st.column_config.TextColumn(
+                           "Pré-check", disabled=True, width="small"
+                       ),
+        "Décision":    st.column_config.TextColumn(
+                           "Décision", disabled=True, width="small"
+                       ) if mode == "precheck" else st.column_config.SelectboxColumn(
+                           "Décision ✏", options=_STATUS_REUNION, required=True, width="small"
+                       ),
+        "Commentaire": st.column_config.TextColumn("Commentaire ✏", width="large"),
+    }
+
+    edited = st.data_editor(
+        df,
+        column_config=cfg,
+        disabled=fixed_cols,
+        hide_index=True,
+        use_container_width=True,
+        key=editor_key,
+        num_rows="fixed",
+    )
+
+    # ── Bouton "Voir détail" sous le tableau ──────────────────────────────────
+    real_marquages = [m["marquage"] for m in meta]
+    col_sel, col_btn, _ = st.columns([2, 1, 5])
+    selected_mq = col_sel.selectbox(
+        "Voir détail", real_marquages,
+        key=f"{key_prefix}_detail_sel_{pn_key}",
+        label_visibility="collapsed",
+    )
+    if col_btn.button("🔍 Ouvrir", key=f"{key_prefix}_detail_btn_{pn_key}", use_container_width=True):
+        st.session_state[detail_key] = selected_mq
+        st.rerun()
+
+    # ── Construire la liste forms depuis edited ───────────────────────────────
+    forms: list[dict] = []
+    for i, (_, erow) in enumerate(edited.iterrows()):
+        m = meta[i]
+        locked = m["locked"]
 
         if locked:
-            bldg = _SVC1_TO_BLDG.get(svc1_saved, "—")
-            r2[0].markdown(f"**{bldg}**")
-            r2[1].markdown(dec.get("n_service3") or "—")
-            r2[2].markdown(dec.get("n_service4") or "—")
-            r2[3].markdown(dec.get("pre_check") or "—")
-            r2[4].success(dec.get("decision") or "—")
-            r2[5].markdown(dec.get("commentaire") or "—")
+            # Ignorer les édits sur les lignes verrouillées
             forms.append({
-                "marquage":    marquage,
+                "marquage":    m["marquage"],
                 "_locked":     True,
-                "svc3":        dec.get("n_service3") or "",
-                "svc1":        svc1_saved,
-                "svc4":        dec.get("n_service4") or "",
-                "pre_check":   dec.get("pre_check") or "",
-                "decision":    dec.get("decision") or "",
-                "commentaire": dec.get("commentaire") or "",
+                "svc3":        "",
+                "svc1":        m["svc1_saved"],
+                "svc4":        "",
+                "pre_check":   m["pre_saved"],
+                "decision":    erow["Décision"],
+                "commentaire": erow["Commentaire"] or "",
             })
-
         else:
-            k_svc3 = f"{key_prefix}_{marquage}_svc3"
-            k_svc4 = f"{key_prefix}_{marquage}_svc4"
-            k_pre  = f"{key_prefix}_{marquage}_pre"
-            k_dec  = f"{key_prefix}_{marquage}_dec"
-            k_comm = f"{key_prefix}_{marquage}_comm"
-            k_bldg = f"{key_prefix}_{marquage}_bldg"
-
-            # Init session state depuis DB
-            if k_svc3 not in st.session_state:
-                st.session_state[k_svc3] = dec.get("n_service3") or ""
-            if k_svc4 not in st.session_state:
-                st.session_state[k_svc4] = dec.get("n_service4") or ""
-            if k_pre not in st.session_state:
-                st.session_state[k_pre] = dec.get("pre_check") or ""
-            if k_comm not in st.session_state:
-                st.session_state[k_comm] = dec.get("commentaire") or ""
-            if k_dec not in st.session_state:
-                opts = _STATUS_REUNION if mode == "reunion" else _STATUS_PRECHECK
-                saved_dec = dec.get("decision")
-                st.session_state[k_dec] = saved_dec if saved_dec in opts else opts[0]
-
-            # N.Service3
-            svc3 = r2[1].selectbox(
-                "N.Service3", _SVC3_OPTS, key=k_svc3, label_visibility="collapsed"
-            )
-
-            # Bâtiment auto-dérivé
+            svc3 = erow["N.Service3"] or ""
             svc1_candidates = svc1_for_svc3(svc3) if svc3 else []
-            svc1 = ""
+            # En cas d'ambiguïté, prendre le premier (LSO avant MF)
+            svc1 = svc1_candidates[0] if svc1_candidates else ""
 
-            if not svc3:
-                r2[0].caption("—")
-            elif len(svc1_candidates) == 1:
-                svc1 = svc1_candidates[0]
-                bldg = _SVC1_TO_BLDG.get(svc1, "?")
-                r2[0].markdown(f"**{bldg}**")
-            else:
-                # Service3 ambigu (50 cas) : mini selectbox bâtiment
-                bldg_opts = [_SVC1_TO_BLDG.get(s, s) for s in svc1_candidates]
-                bldg_map  = {_SVC1_TO_BLDG.get(s, s): s for s in svc1_candidates}
-                chosen = r2[0].selectbox(
-                    "Bât.⚠", bldg_opts, key=k_bldg, label_visibility="collapsed",
-                    help="Service3 présent dans les 2 bâtiments — choisir"
-                )
-                svc1 = bldg_map.get(chosen, "")
-
-            # N.Service4 (filtré si bâtiment connu)
-            svc4_opts = ([""] + svc4_options(svc1, svc3)) if svc1 else ([""] + svc4_all)
-            cur_svc4 = st.session_state.get(k_svc4, "")
-            if cur_svc4 and cur_svc4 not in svc4_opts:
-                svc4_opts = svc4_opts + [cur_svc4]
-
-            svc4 = r2[2].selectbox(
-                "N.Service4", svc4_opts, key=k_svc4,
-                label_visibility="collapsed",
-                disabled=(bool(svc3) and not svc1),
-            )
-
-            # Pré-check / Décision / Commentaire
             if mode == "precheck":
-                pre = r2[3].selectbox(
-                    "Pré-check", _PRECHECK_OPTS, key=k_pre, label_visibility="collapsed"
-                )
                 final_dec = "PRÉ-CHECK" if svc3 else "EN COURS"
-                r2[4].markdown(f"**{final_dec}**")
+                pre = erow["Pré-check"] or ""
             else:
-                r2[3].caption(dec.get("pre_check") or "—")
-                final_dec = r2[4].selectbox(
-                    "Décision", _STATUS_REUNION, key=k_dec, label_visibility="collapsed"
-                )
-                pre = dec.get("pre_check") or ""
-
-            comm = r2[5].text_input(
-                "Commentaire", key=k_comm, label_visibility="collapsed"
-            )
+                final_dec = erow["Décision"] or "VALIDÉ"
+                pre = m["pre_saved"]
 
             forms.append({
-                "marquage":    marquage,
+                "marquage":    m["marquage"],
                 "_locked":     False,
                 "svc3":        svc3,
                 "svc1":        svc1,
-                "svc4":        svc4,
+                "svc4":        erow["N.Service4"] or "",
                 "pre_check":   pre,
                 "decision":    final_dec,
-                "commentaire": comm,
+                "commentaire": erow["Commentaire"] or "",
             })
-
-        # Séparateur léger entre DECAs
-        if i < len(active_df) - 1:
-            st.markdown(
-                '<hr style="margin:4px 0; border:none; border-top:1px solid #e0e0e0;">',
-                unsafe_allow_html=True,
-            )
 
     return forms
 
