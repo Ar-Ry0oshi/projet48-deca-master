@@ -98,22 +98,31 @@ SVC_COLS_INTERNAL = ["service1", "service2", "service3", "service4", "service5"]
 
 
 def _load_deca(path: Path) -> tuple[pd.DataFrame, str]:
-    """Returns (normalised dataframe, format_name)."""
-    raw = path.read_bytes()[:8000]
-    import chardet
-    enc = chardet.detect(raw)["encoding"] or "latin-1"
-
-    # Detect separator by trying both
+    """Returns (normalised dataframe, format_name).
+    Supports both CSV (auto-detect separator + encoding) and XLSX.
+    Column headers are matched case-insensitively so UPPERCASE xlsx headers work.
+    """
     df = None
-    for sep in [";", ","]:
+    if path.suffix.lower() in (".xlsx", ".xls"):
         try:
-            candidate = pd.read_csv(path, sep=sep, encoding=enc, dtype=str,
-                                    low_memory=False, on_bad_lines="skip")
-            if len(candidate.columns) > 5:
-                df = candidate
-                break
-        except Exception:
-            continue
+            df = pd.read_excel(path, dtype=str)
+            df.columns = df.columns.str.strip()
+        except Exception as e:
+            raise ValueError(f"Could not parse DECA Excel file: {path} — {e}") from e
+    else:
+        raw = path.read_bytes()[:8000]
+        import chardet
+        enc = chardet.detect(raw)["encoding"] or "latin-1"
+
+        for sep in [";", ","]:
+            try:
+                candidate = pd.read_csv(path, sep=sep, encoding=enc, dtype=str,
+                                        low_memory=False, on_bad_lines="skip")
+                if len(candidate.columns) > 5:
+                    df = candidate
+                    break
+            except Exception:
+                continue
     if df is None:
         raise ValueError(f"Could not parse DECA file: {path}")
 

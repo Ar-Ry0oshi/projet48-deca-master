@@ -18,7 +18,7 @@ else:
     PHOTOS_DIR = _linux_mount if _linux_mount.exists() else None
 
 # Expected source filenames (flexible — matched by pattern in reload_sources)
-SRC_DECA_PATTERNS = ["*DECA*.csv", "*deca*.csv"]
+SRC_DECA_PATTERNS = ["*DECA*.csv", "*deca*.csv", "*DECA*.xlsx", "*deca*.xlsx", "*Extract*.xlsx", "*extract*.xlsx"]
 SRC_PANOPLY_PATTERNS = ["Panoply*.xlsx", "panoply*.xlsx"]
 SRC_DMC_PATTERNS = ["DMC*.xlsx", "dmc*.xlsx", "ESM*.xlsx"]
 SRC_ICV_PATTERNS = ["ICV*.xlsx", "icv*.xlsx", "*Translation*.xlsx"]
