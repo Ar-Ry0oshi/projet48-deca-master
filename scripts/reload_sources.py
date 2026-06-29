@@ -264,11 +264,11 @@ def _translate_opcodes(opcodes: list[str], icv: dict[str, str]) -> str:
     """Extract IC codes from DMC opcodes and translate them."""
     seen, parts = set(), []
     for op in opcodes:
-        # DMC format: LEAP-1A-72-09-90-01A-664F-C
-        # IC code is the 6th segment (index 5 after split on -)
+        # DMC format: LEAP-1B-72-24-00-28A-363A-C
+        # IC code is the 7th segment (index 6 after split on -)
         segments = op.split("-")
-        if len(segments) >= 6:
-            ic = segments[5].upper()
+        if len(segments) >= 7:
+            ic = segments[6].upper()
             if ic not in seen:
                 seen.add(ic)
                 label = icv.get(ic)
