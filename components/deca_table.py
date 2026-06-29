@@ -141,9 +141,9 @@ def render_deca_table_editor(
             if cur_svc4:
                 n_svc4_init = cur_svc4
 
-        # DECA sans nouveau service = à traiter (◈), avec service = déjà fait (en bas)
-        has_new_svc = bool(n_svc3_init and dec)   # décision existante avec svc3
-        needs_treatment = not has_new_svc and not locked
+        # ◈ = aucun service dans la source ET pas de décision → vraiment à traiter
+        # Déjà placé dans la source (cur_svc3) OU décision existante → en bas
+        needs_treatment = not cur_svc3 and not dec.get("n_service3") and not locked
 
         if locked:
             mq_display = f"🔒 {marquage}"
