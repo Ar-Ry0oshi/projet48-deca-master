@@ -47,12 +47,12 @@ def render():
     st.subheader("Remplacer l'extract DECA")
     st.caption(
         "Glisse ici le nouvel export CSV depuis DECA. "
-        "Les formats février (21 col, virgule) et mai (208 col, point-virgule) sont tous les deux supportés."
+        "Formats supportés : CSV février (21 col, virgule), CSV mai (208 col, point-virgule), XLSX (headers majuscules)."
     )
 
     uploaded = st.file_uploader(
-        "Extract DECA (.csv)",
-        type=["csv"],
+        "Extract DECA (.csv ou .xlsx)",
+        type=["csv", "xlsx"],
         key="deca_upload",
         label_visibility="collapsed",
     )
