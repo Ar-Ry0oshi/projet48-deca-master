@@ -109,11 +109,15 @@ def _render_decision_info(marquage: str):
         return
 
     st.markdown("#### Décision")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
     col1.metric("Statut", dec["decision"] or "—")
     col2.metric("Pré-check", dec["pre_check"] or "—")
-    col3.metric("N.Service3", dec["n_service3"] or "—")
-    col4.metric("N.Service4", dec["n_service4"] or "—")
+
+    col3, col4 = st.columns(2)
+    col3.markdown(f"**N.Service3**")
+    col3.info(dec["n_service3"] or "—")
+    col4.markdown(f"**N.Service4**")
+    col4.info(dec["n_service4"] or "—")
 
     if dec["commentaire"]:
         st.markdown(f"**Commentaire** : {dec['commentaire']}")

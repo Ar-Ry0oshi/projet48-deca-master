@@ -125,16 +125,39 @@ def render_deca_table_editor(
         svc1_saved = dec.get("n_service1") or ""
         bldg_saved = _SVC1_TO_BLDG.get(svc1_saved, "")
 
+        # DECA déjà placé dans les données source (service3 non vide)
+        cur_svc3 = row.get("service3") or ""
+        already_placed = bool(cur_svc3)
+
+        # Pré-remplir N.Service3 avec le service actuel si aucune décision prise
+        n_svc3_init = dec.get("n_service3") or ""
+        if not n_svc3_init and already_placed and not dec:
+            n_svc3_init = cur_svc3
+            svc1_for_init = svc1_for_svc3(cur_svc3)
+            bldg_saved = _SVC1_TO_BLDG.get(svc1_for_init[0], "") if svc1_for_init else ""
+            if svc1_for_init:
+                svc1_saved = svc1_for_init[0]
+
+        # Indicateur visuel : ◈ = déjà placé (service dans les données source)
+        if locked:
+            mq_display = f"🔒 {marquage}"
+        elif already_placed:
+            mq_display = f"◈ {marquage}"
+        else:
+            mq_display = marquage
+
         meta.append({
-            "marquage":    marquage,
-            "locked":      locked,
-            "svc1_saved":  svc1_saved,
-            "pre_saved":   dec.get("pre_check") or "",
+            "marquage":      marquage,
+            "locked":        locked,
+            "already_placed": already_placed,
+            "cur_svc3":      cur_svc3,
+            "svc1_saved":    svc1_saved,
+            "pre_saved":     dec.get("pre_check") or "",
         })
 
         display_rows.append({
-            "Marquage":    f"🔒 {marquage}" if locked else marquage,
-            "Svc 3 act.":  row.get("service3") or "",
+            "Marquage":    mq_display,
+            "Svc 3 act.":  cur_svc3,
             "Svc 4 act.":  row.get("service4") or "",
             "Svc 5 act.":  row.get("service5") or "",
             "Loc 1":       row.get("localisation1") or "",
@@ -142,8 +165,8 @@ def render_deca_table_editor(
             "Loc 3":       row.get("localisation3") or "",
             "Loc 4":       row.get("localisation4") or "",
             "Loc 5":       row.get("localisation5") or "",
-            "N.Service3":  dec.get("n_service3") or "",
             "Bât.":        bldg_saved,
+            "N.Service3":  n_svc3_init,
             "N.Service4":  dec.get("n_service4") or "",
             "Pré-check":   dec.get("pre_check") or "",
             "Décision":    dec_val,
@@ -155,6 +178,11 @@ def render_deca_table_editor(
     # Clé stable par PN (évite que les edits d'un PN contaminent le suivant)
     pn_key = active_df["pn_short"].iloc[0] if "pn_short" in active_df.columns else "x"
     editor_key = f"{key_prefix}_editor_{pn_key}"
+
+    # ── Légende indicateurs ───────────────────────────────────────────────────
+    n_placed = sum(1 for m in meta if m["already_placed"] and not m["locked"])
+    if n_placed:
+        st.caption(f"◈ = DECA déjà placé dans la source ({n_placed}) — N.Service3 pré-rempli avec le service actuel")
 
     # ── Colonnes figées (read-only) ───────────────────────────────────────────
     fixed_cols = ["Marquage", "Svc 3 act.", "Svc 4 act.", "Svc 5 act.",
@@ -177,10 +205,10 @@ def render_deca_table_editor(
         "Loc 3":       st.column_config.TextColumn("Loc 3",      disabled=True, width="small"),
         "Loc 4":       st.column_config.TextColumn("Loc 4",      disabled=True, width="small"),
         "Loc 5":       st.column_config.TextColumn("Loc 5",      disabled=True, width="small"),
+        "Bât.":        st.column_config.TextColumn("Bât.",       disabled=True, width="small"),
         "N.Service3":  st.column_config.SelectboxColumn(
                            "N.Service3 ✏", options=_SVC3_OPTS, required=False, width="medium"
                        ),
-        "Bât.":        st.column_config.TextColumn("Bât.",       disabled=True, width="small"),
         "N.Service4":  st.column_config.SelectboxColumn(
                            "N.Service4 ✏", options=[""] + svc4_all, required=False, width="medium"
                        ),

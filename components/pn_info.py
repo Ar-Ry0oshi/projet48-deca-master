@@ -5,9 +5,31 @@ Utilisé par precheck.py et reunion.py.
 import pandas as pd
 import streamlit as st
 
+# Nb moteurs par module (WIP document)
+_MOTEURS: dict[str, int] = {
+    "MM01": 4,  "MM02": 49,  "MM03": 57,
+    "SM21": 43, "SM22": 43,  "SM23": 0,  "SM24": 11, "SM61": 24,
+    "SM30": 109,"SM31": 109, "SM32": 109,
+    "SM41": 45,
+    "SM51": 45, "SM52": 243, "SM53": 219,"SM54": 45, "SM55": 6,
+    "SM56": 18, "SM57": 15,  "SM58": 36, "SM59": 32,
+}
+
+
+def _motor_table(modules: list[str]) -> pd.DataFrame | None:
+    """Retourne un df Module / Moteurs / % pour les modules connus."""
+    rows = [(m, _MOTEURS.get(m, 0)) for m in modules if m in _MOTEURS]
+    if not rows:
+        return None
+    total = sum(n for _, n in rows)
+    return pd.DataFrame(
+        [{"Module": m, "Moteurs": n, "%": f"{100*n/total:.0f}%" if total else "—"}
+         for m, n in rows]
+    )
+
 
 def render_pn_info(pn_short: str, active_df: pd.DataFrame):
-    """Affiche modules, ASSY flag, nb DECAs actifs, source conflict, opcodes ICV."""
+    """Affiche modules, ASSY flag, nb DECAs actifs, source conflict, opcodes ICV, ratio moteurs."""
     if active_df.empty:
         return
     row = active_df.iloc[0]
@@ -19,12 +41,14 @@ def render_pn_info(pn_short: str, active_df: pd.DataFrame):
     n_active = len(active_df)
     n_modules = len(modules)
 
-    col_mod, col_assy, col_deca, col_warn = st.columns([3, 1.5, 1, 2])
+    # ── Ligne principale ──────────────────────────────────────────────────────
+    col_mod, col_assy, col_deca, col_warn = st.columns([4, 1.5, 0.8, 2])
 
-    col_mod.markdown(f"**Modules** : {', '.join(modules) if modules else '—'}")
+    # Modules — sur plusieurs lignes si long
+    mod_text = ", ".join(modules) if modules else "—"
+    col_mod.markdown(f"<small><b>Modules :</b> {mod_text}</small>", unsafe_allow_html=True)
 
-    col_assy.caption("**ASSY flag**")
-    col_assy.caption(assy)
+    col_assy.markdown(f"<small><b>ASSY</b><br>{assy}</small>", unsafe_allow_html=True)
 
     col_deca.metric("DECAs", n_active)
 
@@ -36,11 +60,31 @@ def render_pn_info(pn_short: str, active_df: pd.DataFrame):
     if mod_source == "conflict":
         st.caption(f"⚠️ Conflit sources — {conflict}")
     elif mod_source == "panoply_only":
-        st.caption("Source : Panoply uniquement (absent du DMC)")
+        st.caption("Source : Panoply uniquement")
     elif mod_source == "esm_only":
-        st.caption("Source : DMC/ESM uniquement (absent de Panoply)")
+        st.caption("Source : DMC/ESM uniquement")
 
+    # ── ICV ───────────────────────────────────────────────────────────────────
     if opcodes:
-        with st.expander(f"ICV ({opcodes.count('|') + 1} code(s))", expanded=False):
+        n_codes = opcodes.count("|") + 1
+        with st.expander(f"ICV — {n_codes} code(s)", expanded=False):
             for part in opcodes.split(" | "):
                 st.caption(part.strip())
+
+    # ── Proportion moteurs ────────────────────────────────────────────────────
+    df_mot = _motor_table(modules)
+    if df_mot is not None:
+        with st.expander(
+            f"Proportion moteurs — {df_mot['Moteurs'].sum()} moteurs impactés",
+            expanded=(n_modules > 1),
+        ):
+            st.dataframe(
+                df_mot,
+                column_config={
+                    "Module":  st.column_config.TextColumn("Module",  width="small"),
+                    "Moteurs": st.column_config.NumberColumn("Moteurs", width="small"),
+                    "%":       st.column_config.TextColumn("%",       width="small"),
+                },
+                hide_index=True,
+                use_container_width=False,
+            )
