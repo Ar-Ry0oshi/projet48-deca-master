@@ -94,8 +94,11 @@ def _forms_complete(forms: list[dict]) -> tuple[bool, str]:
     for f in forms:
         if f.get("_locked"):
             continue
+        # EN ATTENTE autorisé sans N.Service3 (à traiter plus tard)
+        if f.get("decision") == "EN ATTENTE":
+            continue
         if not f.get("svc3"):
-            return False, f"N.Service3 manquant sur `{f['marquage']}`"
+            return False, f"N.Service3 manquant sur `{f['marquage']}` (mettre EN ATTENTE si non décidé)"
         if not f.get("svc1"):
             return False, f"Bâtiment non résolu pour `{f['marquage']}`"
         if f.get("decision") not in _STATUS_OPTIONS:
