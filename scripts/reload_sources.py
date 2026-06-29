@@ -443,6 +443,7 @@ def reload(data_dir: Path | None = None) -> dict:
     # --- Write to DB (replace tools entirely) ---
     conn = get_connection()
     try:
+        conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute("DELETE FROM tools")
         conn.executemany("""
             INSERT INTO tools (
@@ -461,6 +462,7 @@ def reload(data_dir: Path | None = None) -> dict:
                 ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
             )
         """, rows)
+        conn.execute("PRAGMA foreign_keys = ON")
         conn.commit()
     finally:
         conn.close()
