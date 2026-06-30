@@ -16,7 +16,7 @@ from components.deca_detail import show_deca_detail
 from components.pn_info import render_pn_info
 from components.deca_hors_perimetre import render_excluded
 from components.deca_table import render_readonly_table, render_deca_table_editor
-from services import svc3_options, svc1_for_svc3, svc4_options, svc2_for_svc3, svc1_to_svc4_all
+from services import svc2_for_svc3, svc3_labeled_options, svc3_from_label, svc3_label, svc4_labeled_options, svc4_from_label, svc4_label
 
 
 # ── Constantes ────────────────────────────────────────────────────────────────
@@ -242,25 +242,33 @@ def _render_flat_view(module: str):
 
     st.caption(f"{len(unique_pns)} PNs uniques — décision directement dans la table.")
 
-    svc4_all = sorted({s for lst in svc1_to_svc4_all().values() for s in lst})
+    _svc3_opts = svc3_labeled_options()
+    _svc4_opts = svc4_labeled_options()
 
     flat_rows = []
     for r in unique_pns:
         dec = queries.get_decision(r["marquage"])
-        current_decision = (dec["decision"] if dec else "VALIDÉ")
+        dec = dict(dec) if dec else {}
+        current_decision = dec.get("decision") or "VALIDÉ"
         if current_decision not in _STATUS_OPTIONS:
             current_decision = "VALIDÉ"
+        # Convertir valeurs DB en labels préfixés
+        svc1_sv = dec.get("n_service1") or ""
+        n3_plain = dec.get("n_service3") or ""
+        n4_plain = dec.get("n_service4") or ""
+        n3_disp = svc3_label(n3_plain, svc1_sv) if n3_plain and svc1_sv else n3_plain
+        n4_disp = svc4_label(n4_plain, svc1_sv) if n4_plain and svc1_sv else n4_plain
         flat_rows.append({
             "pn_short":         r["pn_short"],
             "marquage":         r["marquage"],
             "ref_constructeur": r.get("ref_constructeur") or "",
             "service3":         r.get("service3") or "",
-            "pre_check":        (dec["pre_check"] if dec else "") or "",
-            "n_service3":       (dec["n_service3"] if dec else "") or "",
-            "n_service4":       (dec["n_service4"] if dec else "") or "",
+            "pre_check":        dec.get("pre_check") or "",
+            "n_service3":       n3_disp,
+            "n_service4":       n4_disp,
             "decision":         current_decision,
-            "commentaire":      (dec["commentaire"] if dec else "") or "",
-            "_locked":          bool(dec and dec["decision"] in _STATUS_OPTIONS),
+            "commentaire":      dec.get("commentaire") or "",
+            "_locked":          bool(dec and dec.get("decision") in _STATUS_OPTIONS),
         })
 
     df = pd.DataFrame(flat_rows)
@@ -276,10 +284,10 @@ def _render_flat_view(module: str):
             "service3":         st.column_config.TextColumn("Svc 3 actuel", disabled=True, width="small"),
             "pre_check":        st.column_config.TextColumn("Pré-check", disabled=True, width="small"),
             "n_service3":       st.column_config.SelectboxColumn(
-                                    "N.Service3 ✏", options=_SVC3_OPTS, required=False, width="medium"
+                                    "N.Service3 ✏", options=_svc3_opts, required=False, width="medium"
                                 ),
             "n_service4":       st.column_config.SelectboxColumn(
-                                    "N.Service4 ✏", options=[""] + svc4_all, required=False, width="medium"
+                                    "N.Service4 ✏", options=_svc4_opts, required=False, width="medium"
                                 ),
             "decision":         st.column_config.SelectboxColumn(
                                     "Décision ✏", options=_STATUS_OPTIONS, required=True, width="small"
@@ -300,12 +308,12 @@ def _render_flat_view(module: str):
             orig_locked = df[df["marquage"] == row["marquage"]]["_locked"]
             if not orig_locked.empty and orig_locked.iloc[0]:
                 continue
-            svc3 = row.get("n_service3") or ""
-            svc1s = svc1_for_svc3(svc3) if svc3 else []
-            svc1 = svc1s[0] if svc1s else ""
+            svc3_lbl = row.get("n_service3") or ""
+            svc3, svc1 = svc3_from_label(svc3_lbl)
+            svc4 = svc4_from_label(row.get("n_service4") or "")
             _save_deca(
                 row["marquage"], row["pn_short"], module,
-                svc3, svc1, row.get("n_service4") or "",
+                svc3, svc1, svc4,
                 row.get("pre_check") or "", row.get("decision") or "VALIDÉ",
                 row.get("commentaire") or "",
             )
