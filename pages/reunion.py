@@ -41,7 +41,7 @@ def _init_state():
 def _go_to_pn(pn_short: str, module: str):
     pns = queries.get_pn_list_for_module(module)
     st.session_state["reunion_module"] = module
-    st.session_state["reu_sel_module"] = module  # force le selectbox widget
+    st.session_state["reunion_module"] = module  # sera lu par index= au prochain run
     if pn_short in pns:
         st.session_state["reunion_pn_idx"] = pns.index(pn_short)
     st.session_state["reunion_pn"] = pn_short
@@ -373,7 +373,6 @@ def render():
         module = st.selectbox(
             "Module", MODULES,
             index=MODULES.index(st.session_state["reunion_module"]),
-            key="reu_sel_module",
         )
         st.session_state["reunion_module"] = module
 

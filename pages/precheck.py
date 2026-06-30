@@ -45,7 +45,6 @@ def _init_state():
 def _go_to_pn(pn_short: str, module: str):
     pns = queries.get_pn_list_for_module(module)
     st.session_state["precheck_module"] = module
-    st.session_state["sel_module"] = module  # force le selectbox widget
     if pn_short in pns:
         st.session_state["precheck_pn_idx"] = pns.index(pn_short)
     st.session_state["precheck_pn"] = pn_short
@@ -353,7 +352,6 @@ def render():
         module = st.selectbox(
             "Module", MODULES,
             index=MODULES.index(st.session_state["precheck_module"]),
-            key="sel_module",
         )
         st.session_state["precheck_module"] = module
 
