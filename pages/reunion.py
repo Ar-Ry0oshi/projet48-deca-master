@@ -160,6 +160,30 @@ def _render_nav_view(module: str):
 
     forms = render_deca_table_editor(active_df, mode="reunion", key_prefix="reu")
 
+    # ── Reset bulk ────────────────────────────────────────────────────────────
+    locked_mqs = [f["marquage"] for f in forms if f.get("_locked")]
+    if locked_mqs:
+        with st.expander(f"🔓 Déverrouiller des décisions ({len(locked_mqs)} verrouillée(s))", expanded=False):
+            st.caption("Sélectionne les DECAs à remettre en EN COURS pour pouvoir les modifier.")
+            to_reset = st.multiselect(
+                "DECAs à déverrouiller",
+                options=locked_mqs,
+                default=[],
+                key=f"reu_reset_sel_{pn}",
+                label_visibility="collapsed",
+            )
+            col_rst, col_all, _ = st.columns([1, 1, 4])
+            if col_rst.button("🔓 Déverrouiller la sélection", disabled=not to_reset, key=f"reu_rst_sel_{pn}"):
+                for mq in to_reset:
+                    queries.reset_decision(mq, reset_by="reunion_bulk")
+                st.success(f"{len(to_reset)} décision(s) déverrouillée(s).")
+                st.rerun()
+            if col_all.button(f"🔓 Tout déverrouiller ({len(locked_mqs)})", key=f"reu_rst_all_{pn}"):
+                for mq in locked_mqs:
+                    queries.reset_decision(mq, reset_by="reunion_bulk")
+                st.success(f"{len(locked_mqs)} décision(s) déverrouillée(s).")
+                st.rerun()
+
     # Copie rapide multi-DECA
     if len(active_df) > 1:
         c1, c2, _ = st.columns([2, 2, 4])
