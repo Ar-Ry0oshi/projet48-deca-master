@@ -81,7 +81,7 @@ def render():
         df,
         column_config=col_cfg,
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
     )
 
     st.divider()

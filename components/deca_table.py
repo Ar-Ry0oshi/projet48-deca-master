@@ -66,7 +66,7 @@ def render_readonly_table(
             display_df,
             column_config=cfg,
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
             on_select="rerun",
             selection_mode="single-row",
             key=key,
@@ -75,7 +75,7 @@ def render_readonly_table(
         if rows:
             show_deca_detail(active_df.iloc[rows[0]]["marquage"])
     else:
-        st.dataframe(display_df, column_config=cfg, hide_index=True, use_container_width=True)
+        st.dataframe(display_df, column_config=cfg, hide_index=True, width='stretch')
 
 
 # ── Éditeur de décisions — tableau Excel-like ─────────────────────────────────
@@ -259,7 +259,7 @@ def render_deca_table_editor(
         column_config=cfg,
         disabled=fixed_cols,
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
         key=editor_key,
         num_rows="fixed",
     )

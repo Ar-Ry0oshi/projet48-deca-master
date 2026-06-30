@@ -321,7 +321,7 @@ def _render_flat_view(module: str):
         },
         disabled=["pn_short", "marquage", "ref_constructeur", "service3", "pre_check"],
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
         key=f"reu_flat_{module}",
         num_rows="fixed",
     )

@@ -160,7 +160,7 @@ def render():
             st.caption(f"{len(preview_df)} décision(s) VALIDÉ à exporter.")
 
         with st.expander("Aperçu de l'export", expanded=False):
-            st.dataframe(preview_df, hide_index=True, use_container_width=True)
+            st.dataframe(preview_df, hide_index=True, width='stretch')
 
         # Générer le xlsx en mémoire pour le download
         buf = io.BytesIO()
