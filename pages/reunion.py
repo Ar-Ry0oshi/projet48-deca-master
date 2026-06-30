@@ -271,6 +271,7 @@ def _render_flat_view(module: str):
 
     flat_rows = []
     for r in unique_pns:
+        r = dict(r)
         dec = queries.get_decision(r["marquage"])
         dec = dict(dec) if dec else {}
         current_decision = dec.get("decision") or "VALIDÉ"
