@@ -105,12 +105,12 @@ def _forms_complete(forms: list[dict], mode: str) -> tuple[bool, str]:
     for f in forms:
         if f.get("_locked"):
             continue
-        if not f.get("svc3"):
-            return False, f"N.Service3 manquant sur `{f['marquage']}`"
-        if not f.get("svc1"):
-            return False, f"Bâtiment non résolu pour `{f['marquage']}`"
-        if mode == "reunion" and f.get("decision") not in ("VALIDÉ", "EN ATTENTE"):
-            return False, f"Décision manquante sur `{f['marquage']}`"
+        if mode == "reunion":
+            if not f.get("svc3") and f.get("decision") != "EN ATTENTE":
+                return False, f"N.Service3 manquant sur `{f['marquage']}` (mettre EN ATTENTE si non décidé)"
+            if f.get("decision") not in ("VALIDÉ", "EN ATTENTE"):
+                return False, f"Décision manquante sur `{f['marquage']}`"
+        # En precheck : pas de validation bloquante, on peut passer sans svc3
     return True, ""
 
 
@@ -140,10 +140,11 @@ def _render_nav_view(module: str, mode: str):
     # Badge statut
     tools = queries.get_tools_for_module(module)
     decs = [queries.get_decision(d["marquage"]) for d in tools if d["pn_short"] == pn]
-    statuses = [d["decision"] for d in decs if d]
+    decs = [d for d in decs if d]
+    statuses = [d["decision"] for d in decs]
     if all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses) and statuses:
         col_badge.success("Validé")
-    elif any(s == "PRÉ-CHECK" for s in statuses):
+    elif any(d.get("pre_check") for d in decs):
         col_badge.warning("Pré-check")
     else:
         col_badge.info("En cours")

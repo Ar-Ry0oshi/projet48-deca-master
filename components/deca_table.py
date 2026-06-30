@@ -300,7 +300,7 @@ def render_deca_table_editor(
             svc4 = svc4_from_label(erow["N.Service4"] or "")
 
             if mode == "precheck":
-                final_dec = "PRÉ-CHECK" if svc3 else "EN COURS"
+                final_dec = "EN COURS"   # precheck ne touche jamais la colonne décision
                 pre = erow["Pré-check"] or ""
             else:
                 final_dec = erow["Décision"] or "VALIDÉ"
