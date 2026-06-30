@@ -129,8 +129,10 @@ def svc3_label(svc3_plain: str, svc1: str) -> str:
     return f"{bld}{_SEP}{svc3_plain}" if bld else svc3_plain
 
 
-def svc3_from_label(label: str) -> tuple[str, str]:
+def svc3_from_label(label) -> tuple[str, str]:
     """'LSO — SM53 ASSY...' → (svc3_plain, svc1_full).  Plain value → fallback lookup."""
+    if not label or not isinstance(label, str):
+        return "", ""
     if _SEP in label:
         bld, svc3 = label.split(_SEP, 1)
         svc1 = _BLD_TO_SVC1.get(bld, "")
@@ -165,8 +167,10 @@ def svc4_label(svc4_plain: str, svc1: str) -> str:
     return f"{bld}{_SEP}{svc4_plain}" if bld and svc4_plain else svc4_plain
 
 
-def svc4_from_label(label: str) -> str:
+def svc4_from_label(label) -> str:
     """'MF — SVC4...' → 'SVC4...'  (ou valeur brute)."""
+    if not label or not isinstance(label, str):
+        return ""
     if _SEP in label:
         return label.split(_SEP, 1)[1]
     return label
