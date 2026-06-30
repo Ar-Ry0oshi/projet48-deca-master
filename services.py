@@ -99,3 +99,74 @@ def svc1_options() -> list[str]:
 def svc1_to_svc4_all() -> dict[str, list[str]]:
     """Retourne le dict complet {svc1: [svc4, ...]}."""
     return _load()["svc1_to_svc4"]
+
+
+# ── Options labelisées (préfixe bâtiment) ────────────────────────────────────
+
+_SVC1_TO_BLD = {
+    "SAESB LSO - B118 - ENGINE MX / REP": "LSO",
+    "SAESB MF - B24 - MODULE MX / REP":   "MF",
+}
+_BLD_TO_SVC1 = {v: k for k, v in _SVC1_TO_BLD.items()}
+
+_SEP = " — "
+
+
+def svc3_labeled_options() -> list[str]:
+    """['', 'LSO — SM53 ASSY...', 'MF — SM52 MODULE...', ...]"""
+    data = _load()
+    opts = [""]
+    for svc3 in sorted(data["svc3_to_svc1"].keys()):
+        for svc1 in data["svc3_to_svc1"][svc3]:
+            bld = _SVC1_TO_BLD.get(svc1, svc1[:3])
+            opts.append(f"{bld}{_SEP}{svc3}")
+    return opts
+
+
+def svc3_label(svc3_plain: str, svc1: str) -> str:
+    """'SM53 ASSY...' + svc1_full → 'MF — SM53 ASSY...'"""
+    bld = _SVC1_TO_BLD.get(svc1, "")
+    return f"{bld}{_SEP}{svc3_plain}" if bld else svc3_plain
+
+
+def svc3_from_label(label: str) -> tuple[str, str]:
+    """'LSO — SM53 ASSY...' → (svc3_plain, svc1_full).  Plain value → fallback lookup."""
+    if _SEP in label:
+        bld, svc3 = label.split(_SEP, 1)
+        svc1 = _BLD_TO_SVC1.get(bld, "")
+        return svc3, svc1
+    # Backward-compat : valeur stockée sans préfixe
+    svc1_list = _load()["svc3_to_svc1"].get(label, [])
+    return label, (svc1_list[0] if svc1_list else "")
+
+
+def svc4_labeled_options() -> list[str]:
+    """Toutes les svc4 préfixées bâtiment, triées."""
+    data = _load()
+    seen, opts = set(), [""]
+    for svc1 in sorted(data["svc1_to_svc4"]):
+        bld = _SVC1_TO_BLD.get(svc1, svc1[:3])
+        for svc4 in data["svc1_to_svc4"][svc1]:
+            lbl = f"{bld}{_SEP}{svc4}"
+            if lbl not in seen:
+                seen.add(lbl)
+                opts.append(lbl)
+    return opts
+
+
+def svc4_labeled_for_bld(svc1: str, svc3: str = "") -> list[str]:
+    """svc4 filtrés pour un bâtiment/svc3, avec préfixe."""
+    bld = _SVC1_TO_BLD.get(svc1, svc1[:3])
+    return [""] + [f"{bld}{_SEP}{s}" for s in svc4_options(svc1, svc3)]
+
+
+def svc4_label(svc4_plain: str, svc1: str) -> str:
+    bld = _SVC1_TO_BLD.get(svc1, "")
+    return f"{bld}{_SEP}{svc4_plain}" if bld and svc4_plain else svc4_plain
+
+
+def svc4_from_label(label: str) -> str:
+    """'MF — SVC4...' → 'SVC4...'  (ou valeur brute)."""
+    if _SEP in label:
+        return label.split(_SEP, 1)[1]
+    return label

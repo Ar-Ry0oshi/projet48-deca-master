@@ -6,19 +6,22 @@ import pandas as pd
 import streamlit as st
 
 from db import queries
-from services import svc3_options, svc1_for_svc3, svc4_options, svc1_to_svc4_all
+from services import (
+    svc1_for_svc3, svc3_labeled_options, svc3_label, svc3_from_label,
+    svc4_labeled_options, svc4_label, svc4_from_label,
+)
 from config import PRECHECK_FLAGS
 
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
-_SVC3_OPTS = [""] + svc3_options()
+_SVC3_OPTS  = svc3_labeled_options()   # ['', 'LSO — ...', 'MF — ...']
+_SVC4_OPTS  = svc4_labeled_options()   # ['', 'LSO — ...', 'MF — ...']
 
-_BLDG_TO_SVC1 = {
-    "LSO": "SAESB LSO - B118 - ENGINE MX / REP",
-    "MF":  "SAESB MF - B24 - MODULE MX / REP",
+_SVC1_TO_BLDG = {
+    "SAESB LSO - B118 - ENGINE MX / REP": "LSO",
+    "SAESB MF - B24 - MODULE MX / REP":   "MF",
 }
-_SVC1_TO_BLDG = {v: k for k, v in _BLDG_TO_SVC1.items()}
 
 _STATUS_PRECHECK = ["EN COURS", "PRÉ-CHECK"]
 _STATUS_REUNION  = ["VALIDÉ", "EN ATTENTE"]
@@ -93,8 +96,6 @@ def render_deca_table_editor(
     if active_df.empty:
         return []
 
-    svc4_all = sorted({s for lst in svc1_to_svc4_all().values() for s in lst})
-
     # ── Ouvrir fiche : une seule fois par run pour éviter le duplicate ID ────
     detail_key = f"{key_prefix}_detail_open"
     if detail_key in st.session_state and st.session_state[detail_key]:
@@ -121,36 +122,48 @@ def render_deca_table_editor(
             if dec_val not in _STATUS_REUNION:
                 dec_val = "VALIDÉ"
 
-        # Bâtiment affiché depuis décision sauvegardée
         svc1_saved = dec.get("n_service1") or ""
-        bldg_saved = _SVC1_TO_BLDG.get(svc1_saved, "")
-
         cur_svc3 = row.get("service3") or ""
         cur_svc4 = row.get("service4") or ""
 
-        # Pré-remplir N.Service3/4 avec les services actuels si aucune décision prise
-        n_svc3_init = dec.get("n_service3") or ""
-        n_svc4_init = dec.get("n_service4") or ""
+        # Valeur DB → label affiché (préfixé bâtiment)
+        n_svc3_plain = dec.get("n_service3") or ""
+        n_svc4_plain = dec.get("n_service4") or ""
+
+        if n_svc3_plain and svc1_saved:
+            n_svc3_display = svc3_label(n_svc3_plain, svc1_saved)
+        elif n_svc3_plain:
+            # Fallback : chercher le bâtiment depuis les mappings
+            s1l = svc1_for_svc3(n_svc3_plain)
+            n_svc3_display = svc3_label(n_svc3_plain, s1l[0]) if s1l else n_svc3_plain
+        else:
+            n_svc3_display = ""
+
+        if n_svc4_plain and svc1_saved:
+            n_svc4_display = svc4_label(n_svc4_plain, svc1_saved)
+        else:
+            n_svc4_display = n_svc4_plain
+
+        # Pré-remplir depuis la source si aucune décision en DB
         if not dec:
             if cur_svc3:
-                n_svc3_init = cur_svc3
-                svc1_for_init = svc1_for_svc3(cur_svc3)
-                if svc1_for_init:
-                    svc1_saved = svc1_for_init[0]
-                    bldg_saved = _SVC1_TO_BLDG.get(svc1_saved, "")
-            if cur_svc4:
-                n_svc4_init = cur_svc4
+                s1l = svc1_for_svc3(cur_svc3)
+                svc1_saved = s1l[0] if s1l else ""
+                n_svc3_display = svc3_label(cur_svc3, svc1_saved) if svc1_saved else cur_svc3
+            if cur_svc4 and svc1_saved:
+                n_svc4_display = svc4_label(cur_svc4, svc1_saved)
+            elif cur_svc4:
+                n_svc4_display = cur_svc4
 
-        # ◈ = aucun service dans la source ET pas de décision → vraiment à traiter
-        # Déjà placé dans la source (cur_svc3) OU décision existante → en bas
-        needs_treatment = not cur_svc3 and not dec.get("n_service3") and not locked
+        # ◈ = aucun service connu → à traiter ; sinon → déjà rempli (en bas)
+        needs_treatment = not cur_svc3 and not n_svc3_plain and not locked
 
         if locked:
             mq_display = f"🔒 {marquage}"
         elif needs_treatment:
-            mq_display = f"◈ {marquage}"   # à traiter en priorité
+            mq_display = f"◈ {marquage}"
         else:
-            mq_display = marquage           # déjà rempli → ira en bas
+            mq_display = marquage
 
         meta.append({
             "marquage":        marquage,
@@ -172,9 +185,8 @@ def render_deca_table_editor(
             "Loc 3":       row.get("localisation3") or "",
             "Loc 4":       row.get("localisation4") or "",
             "Loc 5":       row.get("localisation5") or "",
-            "Bât.":        bldg_saved,
-            "N.Service3":  n_svc3_init,
-            "N.Service4":  n_svc4_init,
+            "N.Service3":  n_svc3_display,
+            "N.Service4":  n_svc4_display,
             "Pré-check":   dec.get("pre_check") or "",
             "Décision":    dec_val,
             "Commentaire": dec.get("commentaire") or "",
@@ -205,9 +217,8 @@ def render_deca_table_editor(
 
     # ── Colonnes figées (read-only) ───────────────────────────────────────────
     fixed_cols = ["Marquage", "Svc 3 act.", "Svc 4 act.", "Svc 5 act.",
-                  "Loc 1", "Loc 2", "Loc 3", "Loc 4", "Loc 5", "Bât."]
+                  "Loc 1", "Loc 2", "Loc 3", "Loc 4", "Loc 5"]
 
-    # En mode precheck : Décision est calculée auto ; en réunion : Pré-check est figé
     if mode == "precheck":
         fixed_cols.append("Décision")
     else:
@@ -224,12 +235,11 @@ def render_deca_table_editor(
         "Loc 3":       st.column_config.TextColumn("Loc 3",      disabled=True, width="small"),
         "Loc 4":       st.column_config.TextColumn("Loc 4",      disabled=True, width="small"),
         "Loc 5":       st.column_config.TextColumn("Loc 5",      disabled=True, width="small"),
-        "Bât.":        st.column_config.TextColumn("Bât.",       disabled=True, width="small"),
         "N.Service3":  st.column_config.SelectboxColumn(
-                           "N.Service3 ✏", options=_SVC3_OPTS, required=False, width="medium"
+                           "N.Service3 ✏", options=_SVC3_OPTS, required=False, width="large"
                        ),
         "N.Service4":  st.column_config.SelectboxColumn(
-                           "N.Service4 ✏", options=[""] + svc4_all, required=False, width="medium"
+                           "N.Service4 ✏", options=_SVC4_OPTS, required=False, width="large"
                        ),
         "Pré-check":   st.column_config.SelectboxColumn(
                            "Pré-check ✏", options=_PRECHECK_OPTS, required=False, width="small"
@@ -273,7 +283,6 @@ def render_deca_table_editor(
         locked = m["locked"]
 
         if locked:
-            # Ignorer les édits sur les lignes verrouillées
             forms.append({
                 "marquage":    m["marquage"],
                 "_locked":     True,
@@ -285,10 +294,10 @@ def render_deca_table_editor(
                 "commentaire": erow["Commentaire"] or "",
             })
         else:
-            svc3 = erow["N.Service3"] or ""
-            svc1_candidates = svc1_for_svc3(svc3) if svc3 else []
-            # En cas d'ambiguïté, prendre le premier (LSO avant MF)
-            svc1 = svc1_candidates[0] if svc1_candidates else ""
+            # Extraire svc3 plain + svc1 depuis le label "MF — SM53 ASSY..."
+            svc3_lbl = erow["N.Service3"] or ""
+            svc3, svc1 = svc3_from_label(svc3_lbl)
+            svc4 = svc4_from_label(erow["N.Service4"] or "")
 
             if mode == "precheck":
                 final_dec = "PRÉ-CHECK" if svc3 else "EN COURS"
@@ -302,7 +311,7 @@ def render_deca_table_editor(
                 "_locked":     False,
                 "svc3":        svc3,
                 "svc1":        svc1,
-                "svc4":        erow["N.Service4"] or "",
+                "svc4":        svc4,
                 "pre_check":   pre,
                 "decision":    final_dec,
                 "commentaire": erow["Commentaire"] or "",
