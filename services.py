@@ -109,7 +109,7 @@ _SVC1_TO_BLD = {
 }
 _BLD_TO_SVC1 = {v: k for k, v in _SVC1_TO_BLD.items()}
 
-_SEP = " — "
+_SEP = " - "
 
 
 def svc3_labeled_options() -> list[str]:
@@ -130,11 +130,12 @@ def svc3_label(svc3_plain: str, svc1: str) -> str:
 
 
 def svc3_from_label(label) -> tuple[str, str]:
-    """'LSO — SM53 ASSY...' → (svc3_plain, svc1_full).  Plain value → fallback lookup."""
+    """'LSO - SM53 ASSY...' → (svc3_plain, svc1_full).  Plain value → fallback lookup."""
     if not label or not isinstance(label, str):
         return "", ""
-    if _SEP in label:
-        bld, svc3 = label.split(_SEP, 1)
+    sep = _SEP if _SEP in label else (" — " if " — " in label else None)
+    if sep:
+        bld, svc3 = label.split(sep, 1)
         svc1 = _BLD_TO_SVC1.get(bld, "")
         return svc3, svc1
     # Backward-compat : valeur stockée sans préfixe
@@ -168,9 +169,10 @@ def svc4_label(svc4_plain: str, svc1: str) -> str:
 
 
 def svc4_from_label(label) -> str:
-    """'MF — SVC4...' → 'SVC4...'  (ou valeur brute)."""
+    """'MF - SVC4...' → 'SVC4...'  (ou valeur brute)."""
     if not label or not isinstance(label, str):
         return ""
-    if _SEP in label:
-        return label.split(_SEP, 1)[1]
+    sep = _SEP if _SEP in label else (" — " if " — " in label else None)
+    if sep:
+        return label.split(sep, 1)[1]
     return label
