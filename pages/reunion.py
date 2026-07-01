@@ -395,14 +395,8 @@ def render():
     with col_stats:
         s = queries.get_stats_for_module(module)
         if s and s.get("total"):
-            pct = round(100 * s.get("valide", 0) / s["total"])
-            st.caption(
-                f"**{s.get('valide', 0)}** validé · "
-                f"**{s.get('en_attente', 0)}** en attente · "
-                f"**{s.get('precheck', 0)}** pré-check "
-                f"— {pct}% validé"
-            )
-            st.progress(pct / 100)
+            from components.progress_bar import render_progress_bar
+            render_progress_bar(s)
 
     st.divider()
 

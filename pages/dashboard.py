@@ -59,7 +59,8 @@ def render():
     c4.metric("Pré-check",    precheck_g)
     c5.metric("En cours",     en_cours_g)
 
-    st.progress(pct_g / 100, text=f"**{pct_g}%** traités ({traites_g} / {total_g})")
+    from components.progress_bar import render_progress_bar
+    render_progress_bar({"total": total_g, "valide": valide_g, "en_attente": attente_g, "precheck": precheck_g})
     st.divider()
 
     # ── Tableau par module ────────────────────────────────────────────────────
@@ -97,15 +98,11 @@ def render():
 
         col_lbl, col_bar = st.columns([1, 5])
         col_lbl.markdown(f"**{module}**")
-
-        # Barre empilée simulée avec du texte coloré
-        pct_v  = row["Validé"] / total
-        pct_a  = row["En attente"] / total
-        pct_p  = row["Pré-check"] / total
-        pct_e  = row["En cours"] / total
-        pct_done = pct_v + pct_a
-
-        col_bar.progress(pct_done, text=(
-            f"✅ {row['Validé']}  ⏳ {row['En attente']}  "
-            f"🔵 {row['Pré-check']}  ⚪ {row['En cours']}"
-        ))
+        with col_bar:
+            from components.progress_bar import render_progress_bar
+            render_progress_bar({
+                "total":      total,
+                "valide":     row["Validé"],
+                "en_attente": row["En attente"],
+                "precheck":   row["Pré-check"],
+            })
