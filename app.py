@@ -22,6 +22,8 @@ init_schema()
 st.markdown("""
 <style>
 [data-testid="stSidebarNav"] { display: none; }
+/* Supprime le grisé pendant les reruns */
+[data-testid="stApp"][aria-busy="true"] * { opacity: 1 !important; }
 </style>
 """, unsafe_allow_html=True)
 
