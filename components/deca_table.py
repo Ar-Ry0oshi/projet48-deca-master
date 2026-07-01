@@ -118,9 +118,10 @@ def render_deca_table_editor(
             if dec_val not in _STATUS_PRECHECK:
                 dec_val = "EN COURS"
         else:
-            dec_val = dec.get("decision") or "VALIDÉ"
+            dec_val = dec.get("decision") or ""
             if dec_val not in _STATUS_REUNION:
-                dec_val = "VALIDÉ"
+                # EN COURS ou vide = déverrouillé/non traité → EN ATTENTE par défaut
+                dec_val = "EN ATTENTE"
 
         svc1_saved = dec.get("n_service1") or ""
         cur_svc3 = row.get("service3") or ""
