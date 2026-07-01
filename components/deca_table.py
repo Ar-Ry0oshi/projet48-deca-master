@@ -174,7 +174,7 @@ def render_deca_table_editor(
             "pre_saved":       dec.get("pre_check") or "",
         })
 
-        display_rows.append({
+        row_dict = {
             "_sort":       0 if needs_treatment else (2 if locked else 1),
             "Marquage":    mq_display,
             "Svc 3 act.":  cur_svc3,
@@ -188,9 +188,11 @@ def render_deca_table_editor(
             "N.Service3":  n_svc3_display,
             "N.Service4":  n_svc4_display,
             "Pré-check":   dec.get("pre_check") or "",
-            "Décision":    dec_val,
             "Commentaire": dec.get("commentaire") or "",
-        })
+        }
+        if mode != "precheck":
+            row_dict["Décision"] = dec_val
+        display_rows.append(row_dict)
 
     # ── Tri : à traiter (◈) en haut, déjà fait au milieu, verrouillés en bas ──
     combined = sorted(zip(display_rows, meta), key=lambda x: x[0]["_sort"])
@@ -219,9 +221,7 @@ def render_deca_table_editor(
     fixed_cols = ["Marquage", "Svc 3 act.", "Svc 4 act.", "Svc 5 act.",
                   "Loc 1", "Loc 2", "Loc 3", "Loc 4", "Loc 5"]
 
-    if mode == "precheck":
-        fixed_cols.append("Décision")
-    else:
+    if mode != "precheck":
         fixed_cols.append("Pré-check")
 
     # ── Config colonnes ───────────────────────────────────────────────────────
@@ -246,9 +246,7 @@ def render_deca_table_editor(
                        ) if mode == "precheck" else st.column_config.TextColumn(
                            "Pré-check", disabled=True, width="small"
                        ),
-        "Décision":    st.column_config.TextColumn(
-                           "Décision", disabled=True, width="small"
-                       ) if mode == "precheck" else st.column_config.SelectboxColumn(
+        "Décision":    st.column_config.SelectboxColumn(
                            "Décision ✏", options=_STATUS_REUNION, required=True, width="small"
                        ),
         "Commentaire": st.column_config.TextColumn("Commentaire ✏", width="large"),
@@ -290,7 +288,7 @@ def render_deca_table_editor(
                 "svc1":        m["svc1_saved"],
                 "svc4":        "",
                 "pre_check":   m["pre_saved"],
-                "decision":    erow["Décision"],
+                "decision":    erow["Décision"] if mode != "precheck" else "EN COURS",
                 "commentaire": erow["Commentaire"] or "",
             })
         else:
