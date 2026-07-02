@@ -27,7 +27,13 @@ DECA_PATH = Path(r"C:\chemin\vers\ton\fichier_DECA.csv")
 # ── SCRIPT ────────────────────────────────────────────────────────────────────
 
 def load_esm(path: Path) -> pd.DataFrame:
-    df = pd.read_excel(path, dtype=str).fillna("")
+    suffix = path.suffix.lower()
+    engine = "xlrd" if suffix == ".xls" else "openpyxl"
+    try:
+        df = pd.read_excel(path, dtype=str, engine=engine).fillna("")
+    except Exception:
+        # Dernier recours : laisser pandas choisir
+        df = pd.read_excel(path, dtype=str, engine="xlrd").fillna("")
     df.columns = df.columns.str.strip()
     return df
 
