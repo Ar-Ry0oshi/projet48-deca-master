@@ -140,7 +140,7 @@ def _render_nav_view(module: str, mode: str):
     # Badge statut
     tools = queries.get_tools_for_module(module)
     decs = [queries.get_decision(d["marquage"]) for d in tools if d["pn_short"] == pn]
-    decs = [d for d in decs if d]
+    decs = [dict(d) for d in decs if d]
     statuses = [d["decision"] for d in decs]
     if all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses) and statuses:
         col_badge.success("Validé")
@@ -255,24 +255,32 @@ def _render_flat_view(module: str, mode: str):
 
     # On utilise un data_editor avec les vraies options de svc3
     # (service4 non filtré ici — trop de lignes pour des formulaires individuels)
-    from services import svc3_options as _s3, svc1_to_svc4_all
-    svc4_all = sorted({s for lst in svc1_to_svc4_all().values() for s in lst})
+    from services import svc3_labeled_options, svc4_labeled_options, svc3_label, svc4_label, svc3_from_label, svc4_from_label, svc1_for_svc3
+    _svc3_opts = svc3_labeled_options()
+    _svc4_opts = svc4_labeled_options()
 
     flat_rows = []
     for r in unique_pns:
+        r = dict(r)
         dec = queries.get_decision(r["marquage"])
+        dec = dict(dec) if dec else {}
+        svc1_sv  = dec.get("n_service1") or ""
+        n3_plain = dec.get("n_service3") or ""
+        n4_plain = dec.get("n_service4") or ""
+        n3_disp  = svc3_label(n3_plain, svc1_sv) if n3_plain and svc1_sv else n3_plain
+        n4_disp  = svc4_label(n4_plain, svc1_sv) if n4_plain and svc1_sv else n4_plain
         flat_rows.append({
             "pn_short":         r["pn_short"],
             "marquage":         r["marquage"],
             "ref_constructeur": r.get("ref_constructeur") or "",
             "service3":         r.get("service3") or "",
+            "localisation3":    r.get("localisation3") or "",
             "assy_flag":        r.get("assy_flag") or "",
-            "n_service3":       (dec["n_service3"] if dec else "") or "",
-            "n_service4":       (dec["n_service4"] if dec else "") or "",
-            "pre_check":        (dec["pre_check"]  if dec else "") or "",
-            "decision":         (dec["decision"]   if dec else "EN COURS"),
-            "commentaire":      (dec["commentaire"] if dec else "") or "",
-            "_locked":          bool(dec and dec["decision"] in ("VALIDÉ", "EN ATTENTE")),
+            "n_service3":       n3_disp,
+            "n_service4":       n4_disp,
+            "pre_check":        dec.get("pre_check") or "",
+            "commentaire":      dec.get("commentaire") or "",
+            "_locked":          bool(dec and dec.get("decision") in ("VALIDÉ", "EN ATTENTE")),
         })
 
     df = pd.DataFrame(flat_rows)
@@ -283,25 +291,21 @@ def _render_flat_view(module: str, mode: str):
             "pn_short":         st.column_config.TextColumn("PN", disabled=True, width="small"),
             "marquage":         st.column_config.TextColumn("Marquage", disabled=True, width="small"),
             "ref_constructeur": st.column_config.TextColumn("Ref.", disabled=True, width="medium"),
-            "service3":         st.column_config.TextColumn("Svc 3 actuel", disabled=True, width="small"),
+            "service3":         st.column_config.TextColumn("Svc 3 act.", disabled=True, width="small"),
+            "localisation3":    st.column_config.TextColumn("Loc 3", disabled=True, width="small"),
             "assy_flag":        st.column_config.TextColumn("ASSY", disabled=True, width="small"),
             "n_service3":       st.column_config.SelectboxColumn(
-                                    "N.Service3 ✏", options=[""] + _s3(), required=False, width="medium"
+                                    "N.Service3 ✏", options=_svc3_opts, required=False, width="large"
                                 ),
             "n_service4":       st.column_config.SelectboxColumn(
-                                    "N.Service4 ✏", options=[""] + svc4_all, required=False, width="medium"
+                                    "N.Service4 ✏", options=_svc4_opts, required=False, width="large"
                                 ),
             "pre_check":        st.column_config.SelectboxColumn(
-                                    "Pré-check", options=_PRECHECK_OPTS, required=False, width="small"
+                                    "Pré-check ✏", options=_PRECHECK_OPTS, required=False, width="small"
                                 ),
-            "decision":         st.column_config.SelectboxColumn(
-                                    "Décision",
-                                    options=(_STATUS_REUNION if mode == "reunion" else _STATUS_PRECHECK),
-                                    required=True, width="small",
-                                ),
-            "commentaire":      st.column_config.TextColumn("Commentaire", width="large"),
+            "commentaire":      st.column_config.TextColumn("Commentaire ✏", width="large"),
         },
-        disabled=["pn_short", "marquage", "ref_constructeur", "service3", "assy_flag"],
+        disabled=["pn_short", "marquage", "ref_constructeur", "service3", "localisation3", "assy_flag"],
         hide_index=True,
         width='stretch',
         key=f"flat_editor_{module}",
@@ -315,13 +319,12 @@ def _render_flat_view(module: str, mode: str):
             orig = df[df["marquage"] == row["marquage"]]["_locked"]
             if not orig.empty and orig.iloc[0]:
                 continue
-            svc3 = row.get("n_service3") or ""
-            svc1s = svc1_for_svc3(svc3) if svc3 else []
-            svc1 = svc1s[0] if svc1s else ""
+            svc3, svc1 = svc3_from_label(row.get("n_service3") or "")
+            svc4 = svc4_from_label(row.get("n_service4") or "")
             _save_deca(
                 row["marquage"], row["pn_short"], module, mode,
-                svc3, svc1, row.get("n_service4") or "",
-                row.get("pre_check") or "", row.get("decision") or "EN COURS",
+                svc3, svc1, svc4,
+                row.get("pre_check") or "", "EN COURS",
                 row.get("commentaire") or "",
             )
             saved += 1
