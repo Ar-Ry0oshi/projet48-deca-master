@@ -101,7 +101,8 @@ def render_deca_table_editor(
     if detail_key in st.session_state and st.session_state[detail_key]:
         mq_to_open = st.session_state[detail_key]
         st.session_state[detail_key] = None
-        show_deca_detail(mq_to_open)
+        all_mqs = active_df["marquage"].tolist()
+        show_deca_detail(mq_to_open, marquages=all_mqs)
 
     # ── Construire les lignes ─────────────────────────────────────────────────
     meta: list[dict] = []   # métadonnées non affichées

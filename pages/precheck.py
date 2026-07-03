@@ -342,7 +342,7 @@ def _render_flat_view(module: str, mode: str):
             label_visibility="collapsed",
         )
         if col_btn.button("🔍 Ouvrir", key=f"detail_flat_btn_{module}", use_container_width=True):
-            show_deca_detail(selected_flat)
+            show_deca_detail(selected_flat, marquages=all_marquages)
 
 
 # ── Point d'entrée ────────────────────────────────────────────────────────────

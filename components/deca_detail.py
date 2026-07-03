@@ -167,11 +167,11 @@ def _render_photos(marquage: str):
         col_prev, col_info, col_next = st.columns([1, 3, 1])
         if col_prev.button("◄", key=f"photo_prev_{marquage}", use_container_width=True):
             st.session_state[key_idx] = max(0, idx - 1)
-            st.rerun()
+            idx = st.session_state[key_idx]
         col_info.caption(f"{idx + 1} / {len(photos)} — `{photos[idx].name}`")
         if col_next.button("►", key=f"photo_next_{marquage}", use_container_width=True):
             st.session_state[key_idx] = min(len(photos) - 1, idx + 1)
-            st.rerun()
+            idx = st.session_state[key_idx]
     else:
         st.caption(f"`{photos[0].name}`")
 
@@ -197,8 +197,48 @@ def _render_changelog(marquage: str):
 
 # ── Point d'entrée ────────────────────────────────────────────────────────────
 
+_NAV_KEY = "detail_nav"  # session state : {"marquages": [...], "idx": n}
+
+
 @st.dialog("Détail DECA", width="large")
-def show_deca_detail(marquage: str):
+def show_deca_detail(marquage: str, marquages: list[str] | None = None):
+    # ── Navigation inter-DECAs ────────────────────────────────────────────────
+    if marquages and len(marquages) > 1:
+        # Initialise ou met à jour la nav si on arrive sur un nouveau marquage
+        nav = st.session_state.get(_NAV_KEY, {})
+        if nav.get("marquages") != marquages or marquage not in marquages:
+            nav = {"marquages": marquages, "idx": marquages.index(marquage) if marquage in marquages else 0}
+            st.session_state[_NAV_KEY] = nav
+
+        idx_nav = nav["idx"]
+        total   = len(marquages)
+
+        # Barre de numéros cliquables (style pagination)
+        st.markdown("**Navigation DECAs**")
+        MAX_VISIBLE = 10
+        start = max(0, idx_nav - MAX_VISIBLE // 2)
+        end   = min(total, start + MAX_VISIBLE)
+        start = max(0, end - MAX_VISIBLE)
+
+        cols = st.columns(min(total, MAX_VISIBLE) + 2)
+        if cols[0].button("◄", key="dnav_prev", disabled=idx_nav == 0, use_container_width=True):
+            st.session_state[_NAV_KEY]["idx"] = idx_nav - 1
+            st.rerun()
+        for ci, mi in enumerate(range(start, end)):
+            label = str(mi + 1)
+            is_cur = mi == idx_nav
+            btn_type = "primary" if is_cur else "secondary"
+            if cols[ci + 1].button(label, key=f"dnav_{mi}", type=btn_type, use_container_width=True):
+                st.session_state[_NAV_KEY]["idx"] = mi
+                st.rerun()
+        if cols[-1].button("►", key="dnav_next", disabled=idx_nav == total - 1, use_container_width=True):
+            st.session_state[_NAV_KEY]["idx"] = idx_nav + 1
+            st.rerun()
+
+        marquage = marquages[st.session_state[_NAV_KEY]["idx"]]
+        st.divider()
+
+    # ── Contenu fiche ─────────────────────────────────────────────────────────
     tool = queries.get_tool(marquage)
     if not tool:
         st.error(f"DECA `{marquage}` introuvable en base.")

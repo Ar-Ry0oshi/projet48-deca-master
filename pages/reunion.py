@@ -251,7 +251,7 @@ def _render_nav_view(module: str):
         label_visibility="collapsed",
     )
     if col_btn.button("🔍 Ouvrir", key=f"reu_detail_btn_{module}_{pn}", use_container_width=True):
-        show_deca_detail(selected)
+        show_deca_detail(selected, marquages=marquages)
 
 
 # ── Vue liste plate ───────────────────────────────────────────────────────────
@@ -357,7 +357,7 @@ def _render_flat_view(module: str):
             label_visibility="collapsed",
         )
         if col_btn.button("🔍 Ouvrir", key=f"reu_detail_flat_btn_{module}", use_container_width=True):
-            show_deca_detail(selected_flat)
+            show_deca_detail(selected_flat, marquages=all_marquages)
 
 
 # ── Point d'entrée ────────────────────────────────────────────────────────────
