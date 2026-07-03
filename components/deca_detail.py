@@ -176,7 +176,7 @@ def _render_photos(marquage: str):
         st.caption(f"`{photos[0].name}`")
 
     try:
-        st.image(str(photos[idx]), use_container_width=True)
+        st.image(str(photos[idx]), width=None)  # pleine largeur sans use_container_width déprécié
     except Exception as e:
         st.error(f"Impossible d'afficher la photo : {e}")
 
@@ -213,27 +213,26 @@ def show_deca_detail(marquage: str, marquages: list[str] | None = None):
         idx_nav = nav["idx"]
         total   = len(marquages)
 
-        # Barre de numéros cliquables (style pagination)
-        st.markdown("**Navigation DECAs**")
-        MAX_VISIBLE = 10
+        # Barre de marquages cliquables (style pagination)
+        MAX_VISIBLE = 8
         start = max(0, idx_nav - MAX_VISIBLE // 2)
         end   = min(total, start + MAX_VISIBLE)
         start = max(0, end - MAX_VISIBLE)
 
-        cols = st.columns(min(total, MAX_VISIBLE) + 2)
+        cols = st.columns([1] + [3] * (end - start) + [1])
         if cols[0].button("◄", key="dnav_prev", disabled=idx_nav == 0, use_container_width=True):
             st.session_state[_NAV_KEY]["idx"] = idx_nav - 1
-            st.rerun()
+            st.rerun(scope="fragment")
         for ci, mi in enumerate(range(start, end)):
-            label = str(mi + 1)
+            mq_lbl = marquages[mi]
             is_cur = mi == idx_nav
             btn_type = "primary" if is_cur else "secondary"
-            if cols[ci + 1].button(label, key=f"dnav_{mi}", type=btn_type, use_container_width=True):
+            if cols[ci + 1].button(mq_lbl, key=f"dnav_{mi}", type=btn_type, use_container_width=True):
                 st.session_state[_NAV_KEY]["idx"] = mi
-                st.rerun()
+                st.rerun(scope="fragment")
         if cols[-1].button("►", key="dnav_next", disabled=idx_nav == total - 1, use_container_width=True):
             st.session_state[_NAV_KEY]["idx"] = idx_nav + 1
-            st.rerun()
+            st.rerun(scope="fragment")
 
         marquage = marquages[st.session_state[_NAV_KEY]["idx"]]
         st.divider()
