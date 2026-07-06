@@ -7,6 +7,12 @@ DB_PATH = ROOT / "decisions.db"
 EXPORTS_DIR = ROOT / "exports"
 LOGS_DIR = ROOT / "logs"
 
+# Extraits DECA bruts (pour la page Progression)
+DECA_EXTRACTS_DIR = ROOT / ".." / ".." / "01_DATA_SOURCES" / "DECA_Extracts" / "CSV"
+
+# Référentiel services
+SERVICES_REF_PATH = ROOT / "ref" / "SERVICES_EXTRACT.xlsx"
+
 # Dossier photos DECA sur le réseau Safran
 # UNC path Windows : \\nas01.one.ad\DECA\ssb\Foto Toolings
 # Sur Linux (dev) : monter le partage sur /mnt/deca_photos si besoin

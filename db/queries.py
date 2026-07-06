@@ -183,6 +183,22 @@ def get_stats_for_module(module: str) -> dict:
     return dict(row) if row else {}
 
 
+def get_complexity_stats_for_module(module: str) -> dict:
+    """Retourne les facteurs bruts pour calculer le score de complexité d'un module."""
+    row = db.fetchone("""
+        SELECT
+            COUNT(t.marquage)                                                              AS n_deca,
+            COUNT(DISTINCT t.pn_short)                                                     AS n_pn,
+            COUNT(CASE WHEN t.complexity_flag != 'unique' THEN 1 END)                     AS n_complex,
+            COUNT(DISTINCT t.service3)                                                     AS n_svc3_distinct,
+            COUNT(DISTINCT CASE WHEN t.service4 NOT LIKE '%EXT WH%' THEN t.service4 END) AS n_svc4_internal,
+            COUNT(CASE WHEN t.service4 LIKE '%EXT WH%' THEN 1 END)                       AS n_ext_storage
+        FROM tools t
+        WHERE t.modules_effective LIKE ? AND t.is_excluded = 0
+    """, (f"%{module}%",))
+    return dict(row) if row else {}
+
+
 # ---------------------------------------------------------------------------
 # Changelog
 # ---------------------------------------------------------------------------

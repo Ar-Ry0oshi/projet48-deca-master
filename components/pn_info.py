@@ -46,7 +46,12 @@ def render_pn_info(pn_short: str, active_df: pd.DataFrame):
     elif mod_source == "esm_only":
         st.caption("Source : DMC/ESM uniquement")
 
-    # ── ICV (gauche) + Moteurs (droite) ──────────────────────────────────────
+    # ── Commentaire outil (partagé par tous les DECAs du PN) ─────────────────
+    tool_comment = row.get("commentaire") or ""
+    if tool_comment:
+        st.caption(f"💬 {tool_comment}")
+
+    # ── ICV (inline compact) + Moteurs (droite) ───────────────────────────────
     mot_rows = [(m, _MOTEURS.get(m, 0)) for m in modules if m in _MOTEURS]
     show_motors = bool(mot_rows)
     show_icv = bool(opcodes)
@@ -55,10 +60,9 @@ def render_pn_info(pn_short: str, active_df: pd.DataFrame):
         col_icv, col_mot = st.columns([3, 2])
 
         if show_icv:
-            with col_icv:
-                st.caption("**Codes ICV**")
-                for part in opcodes.split(" | "):
-                    st.caption(f"• {part.strip()}")
+            # Codes ICV sur une seule ligne compacte, séparés par " · "
+            codes = [p.strip() for p in opcodes.split(" | ") if p.strip()]
+            col_icv.caption(f"**ICV** — {' · '.join(codes)}")
 
         if show_motors:
             total = sum(n for _, n in mot_rows)
