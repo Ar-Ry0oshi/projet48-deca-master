@@ -19,6 +19,7 @@ import pandas as pd
 
 from db import queries, cached as db_cached
 from services import svc3_options, svc1_for_svc3, svc2_for_svc3, svc4_options, svc3_labeled_options, svc4_labeled_options, svc3_from_label, svc4_from_label
+from components.deca_detail import show_deca_detail
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -78,9 +79,13 @@ def _render_pn_row(pn: str, deca_rows: list[dict], module: str, mode: str,
     n = len(deca_rows)
     locked = all(r.get("decision") in ("VALIDÉ", "EN ATTENTE") for r in deca_rows)
 
-    col_pn, col_n, col_badges, col_actions = st.columns([2, 0.5, 2, 3])
+    col_pn, col_open, col_n, col_badges, col_actions = st.columns([2, 0.6, 0.5, 2, 3])
     lock_icon = "🔒 " if locked else ""
     col_pn.markdown(f"**{lock_icon}{pn}**")
+    first_marquage = deca_rows[0]["marquage"]
+    if col_open.button("🔍", key=f"{key_prefix}_open_{pn}_{first_marquage}",
+                       help=f"Ouvrir fiche {first_marquage}", use_container_width=True):
+        show_deca_detail(first_marquage)
     col_n.caption(f"{n} DECA{'s' if n > 1 else ''}")
     col_badges.markdown(badges)
 
