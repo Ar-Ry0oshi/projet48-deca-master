@@ -66,6 +66,33 @@ def _get_complexity_df() -> pd.DataFrame:
               .reset_index(drop=True))
 
 
+def _get_pn_df() -> tuple[pd.DataFrame, dict]:
+    """Retourne (df par module, stats globales)."""
+    rows = []
+    for module in MODULES:
+        p = queries.get_pn_stats_for_module(module)
+        total = p.get("n_pn_total", 0)
+        if total == 0:
+            continue
+        done     = p.get("n_pn_done", 0)
+        excl     = p.get("n_pn_exclusive", 0)
+        shared   = total - excl
+        restant  = total - done
+        pct_pn   = round(100 * done / total) if total else 0
+        rows.append({
+            "Module":        module,
+            "PNs total":     total,
+            "Exclusifs":     excl,
+            "Partagés":      shared,
+            "PNs traités":   done,
+            "PNs restants":  restant,
+            "% PN traités":  pct_pn,
+        })
+    df = pd.DataFrame(rows) if rows else pd.DataFrame()
+    global_stats = queries.get_global_unique_pn_count()
+    return df, global_stats
+
+
 def _get_all_stats() -> pd.DataFrame:
     rows = []
     for module in MODULES:
@@ -141,6 +168,48 @@ def render():
         hide_index=True,
         width='stretch',
     )
+
+    st.divider()
+
+    # ── Vue par PN ───────────────────────────────────────────────────────────
+    st.subheader("Avancement par PN (outil unique)")
+    st.caption(
+        "Un PN partagé entre plusieurs modules est compté une seule fois dans le total global. "
+        "Un PN est 'traité' quand tous ses DECAs du module sont VALIDÉ ou EN ATTENTE."
+    )
+
+    df_pn, global_pn = _get_pn_df()
+
+    if not df_pn.empty:
+        g_active = global_pn.get("n_pn_active", 0)
+        g_done   = int(df_pn["PNs traités"].sum())   # overcount for shared — see caption
+        g_shared = int(df_pn["Partagés"].sum())
+
+        cp1, cp2, cp3 = st.columns(3)
+        cp1.metric("PNs uniques (global)", g_active,
+                   help="Chaque PN compté une seule fois, tous modules confondus")
+        cp2.metric("PNs partagés (cumul)", g_shared,
+                   help="PNs apparaissant dans au moins 2 modules — décision mutualisée")
+        cp3.metric("Modules actifs", len(df_pn))
+
+        st.dataframe(
+            df_pn,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Module":       st.column_config.TextColumn("Module", width="small"),
+                "PNs total":    st.column_config.NumberColumn("PNs total", width="small"),
+                "Exclusifs":    st.column_config.NumberColumn("Exclusifs", width="small",
+                                    help="PNs n'apparaissant que dans ce module"),
+                "Partagés":     st.column_config.NumberColumn("Partagés", width="small",
+                                    help="PNs présents dans d'autres modules aussi"),
+                "PNs traités":  st.column_config.NumberColumn("Traités ✅", width="small"),
+                "PNs restants": st.column_config.NumberColumn("Restants", width="small"),
+                "% PN traités": st.column_config.ProgressColumn(
+                                    "% PN traités", min_value=0, max_value=100,
+                                    format="%d%%", width="medium"),
+            },
+        )
 
     st.divider()
 

@@ -42,6 +42,58 @@ def get_pn_list_for_module(module: str) -> list[str]:
     return [r["pn_short"] for r in rows]
 
 
+def get_pn_stats_for_module(module: str) -> dict:
+    """
+    Retourne les stats PN pour un module :
+    - n_pn_total     : PNs distincts dans ce module
+    - n_pn_exclusive : PNs dont AUCUN outil n'apparaît dans un autre module
+    - n_pn_done      : PNs dont TOUS les DECAs du module sont VALIDÉ ou EN ATTENTE
+    """
+    row = db.fetchone("""
+        SELECT
+            COUNT(DISTINCT t.pn_short) AS n_pn_total,
+            COUNT(DISTINCT CASE
+                WHEN t.pn_short NOT IN (
+                    SELECT DISTINCT t2.pn_short FROM tools t2
+                    WHERE t2.is_excluded = 0
+                      AND t2.modules_effective NOT LIKE ?
+                      AND t2.pn_short IS NOT NULL
+                ) THEN t.pn_short END
+            ) AS n_pn_exclusive
+        FROM tools t
+        WHERE t.modules_effective LIKE ? AND t.is_excluded = 0
+    """, (f"%{module}%", f"%{module}%"))
+    base = dict(row) if row else {"n_pn_total": 0, "n_pn_exclusive": 0}
+
+    # PNs "done" : tous leurs DECAs dans ce module ont une décision finale
+    done_row = db.fetchone("""
+        SELECT COUNT(DISTINCT t.pn_short) AS n_pn_done
+        FROM tools t
+        WHERE t.modules_effective LIKE ? AND t.is_excluded = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM tools t3
+            LEFT JOIN decisions d ON d.marquage = t3.marquage
+            WHERE t3.pn_short = t.pn_short
+              AND t3.modules_effective LIKE ?
+              AND t3.is_excluded = 0
+              AND (d.decision IS NULL OR d.decision NOT IN ('VALIDÉ','EN ATTENTE'))
+          )
+    """, (f"%{module}%", f"%{module}%"))
+    base["n_pn_done"] = dict(done_row)["n_pn_done"] if done_row else 0
+    return base
+
+
+def get_global_unique_pn_count() -> dict:
+    """Compte les PNs uniques globalement (chaque PN une fois, peu importe les modules)."""
+    row = db.fetchone("""
+        SELECT
+            COUNT(DISTINCT pn_short)                                        AS n_pn_global,
+            COUNT(DISTINCT CASE WHEN is_excluded = 0 THEN pn_short END)    AS n_pn_active
+        FROM tools WHERE pn_short IS NOT NULL
+    """)
+    return dict(row) if row else {"n_pn_global": 0, "n_pn_active": 0}
+
+
 def get_deca_count_for_pn(pn_short: str) -> int:
     row = db.fetchone(
         "SELECT COUNT(*) AS cnt FROM tools WHERE pn_short = ? AND is_excluded = 0",
