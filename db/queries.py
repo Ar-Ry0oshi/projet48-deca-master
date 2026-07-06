@@ -53,16 +53,11 @@ def get_pn_stats_for_module(module: str) -> dict:
         SELECT
             COUNT(DISTINCT t.pn_short) AS n_pn_total,
             COUNT(DISTINCT CASE
-                WHEN t.pn_short NOT IN (
-                    SELECT DISTINCT t2.pn_short FROM tools t2
-                    WHERE t2.is_excluded = 0
-                      AND t2.modules_effective NOT LIKE ?
-                      AND t2.pn_short IS NOT NULL
-                ) THEN t.pn_short END
+                WHEN t.modules_effective NOT LIKE '%,%' THEN t.pn_short END
             ) AS n_pn_exclusive
         FROM tools t
         WHERE t.modules_effective LIKE ? AND t.is_excluded = 0
-    """, (f"%{module}%", f"%{module}%"))
+    """, (f"%{module}%",))
     base = dict(row) if row else {"n_pn_total": 0, "n_pn_exclusive": 0}
 
     # PNs "done" : tous leurs DECAs dans ce module ont une décision finale
