@@ -35,7 +35,6 @@ def _init_state():
         "precheck_view":     "nav",
         "precheck_show_svc": True,
         "precheck_show_loc": False,
-        "precheck_mode":     "precheck",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -350,7 +349,8 @@ def _render_flat_view(module: str, mode: str):
 def render():
     _init_state()
 
-    col_mod, col_view, col_mode, col_search, col_stats = st.columns([1, 1.2, 1, 1.5, 2])
+    col_mod, col_view, col_search, col_stats = st.columns([1, 1.2, 1.5, 2])
+    mode = "precheck"
 
     with col_mod:
         module = st.selectbox(
@@ -367,16 +367,6 @@ def render():
             label_visibility="collapsed",
         )
         st.session_state["precheck_view"] = "nav" if view == "Navigation PN" else "flat"
-
-    with col_mode:
-        mode_label = st.radio(
-            "Mode", ["Pré-check", "Réunion"],
-            index=0 if st.session_state["precheck_mode"] == "precheck" else 1,
-            horizontal=True,
-            label_visibility="collapsed",
-        )
-        st.session_state["precheck_mode"] = "precheck" if mode_label == "Pré-check" else "reunion"
-        mode = st.session_state["precheck_mode"]
 
     with col_search:
         result = pn_search_widget(key_prefix="precheck_top")

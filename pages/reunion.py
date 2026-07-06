@@ -365,8 +365,6 @@ def _render_flat_view(module: str):
 def render():
     _init_state()
 
-    st.title("Réunion")
-
     col_mod, col_view, col_search, col_stats = st.columns([1, 1.2, 1.5, 2])
 
     with col_mod:

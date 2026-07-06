@@ -33,11 +33,15 @@ with st.sidebar:
     st.caption("PSO Tooling — SAESB")
     st.divider()
 
-    page = st.radio(
-        "Navigation",
-        ["Dashboard", "Pré-check", "Réunion", "Données", "Historique"],
-        label_visibility="collapsed",
-    )
+    _pages = ["Dashboard", "Pré-check", "Réunion", "Données", "Historique"]
+    if "current_page" not in st.session_state:
+        st.session_state["current_page"] = "Dashboard"
+    page = st.session_state["current_page"]
+    for _p in _pages:
+        if st.button(_p, key=f"nav_{_p}", use_container_width=True,
+                     type="primary" if page == _p else "secondary"):
+            st.session_state["current_page"] = _p
+            st.rerun()
     st.divider()
     st.caption("Safran Aircraft Engine Services Brussels")
 
