@@ -17,7 +17,7 @@ from collections import defaultdict
 import streamlit as st
 import pandas as pd
 
-from db import queries
+from db import queries, cached as db_cached
 from services import svc3_options, svc1_for_svc3, svc2_for_svc3, svc4_options, svc3_labeled_options, svc4_labeled_options, svc3_from_label, svc4_from_label
 
 
@@ -188,7 +188,7 @@ def render_service_view(module: str, mode: str, key_prefix: str = "sv"):
     """Vue arborescente Service3 → Service4 → PNs/DECAs."""
 
     # ── Chargement données ────────────────────────────────────────────────────
-    all_rows = queries.get_tools_for_module(module, include_excluded=False)
+    all_rows = db_cached.get_tools_for_module(module, include_excluded=False)
     if not all_rows:
         st.info(f"Aucun DECA actif pour {module}.")
         return

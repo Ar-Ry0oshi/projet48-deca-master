@@ -8,7 +8,7 @@ import streamlit as st
 import pandas as pd
 
 from config import MODULES, PRECHECK_FLAGS
-from db import queries
+from db import queries, cached as db_cached
 from components.pn_search import pn_search_widget
 from components.deca_detail import show_deca_detail
 from components.pn_info import render_pn_info
@@ -52,7 +52,7 @@ def _go_to_pn(pn_short: str, module: str):
 # ── Chargement DECAs ──────────────────────────────────────────────────────────
 
 def _load_deca_rows(pn_short: str, module: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    all_rows = queries.get_tools_for_module(module, include_excluded=True)
+    all_rows = db_cached.get_tools_for_module(module, include_excluded=True)
     pn_rows  = [r for r in all_rows if r["pn_short"] == pn_short]
     active   = [dict(r) for r in pn_rows if not r["is_excluded"]]
     excluded = [dict(r) for r in pn_rows if r["is_excluded"]]
@@ -137,7 +137,7 @@ def _render_nav_view(module: str, mode: str):
     col_ctr.caption(f"{idx + 1} / {len(pns)}")
 
     # Badge statut
-    tools = queries.get_tools_for_module(module)
+    tools = db_cached.get_tools_for_module(module)
     decs = [queries.get_decision(d["marquage"]) for d in tools if d["pn_short"] == pn]
     decs = [dict(d) for d in decs if d]
     statuses = [d["decision"] for d in decs]
@@ -241,7 +241,7 @@ def _render_nav_view(module: str, mode: str):
 # ── Vue liste plate (uniques) ─────────────────────────────────────────────────
 
 def _render_flat_view(module: str, mode: str):
-    all_rows = queries.get_tools_for_module(module)
+    all_rows = db_cached.get_tools_for_module(module)
     unique_pns = [dict(r) for r in all_rows if r["complexity_flag"] == "unique"]
 
     if not unique_pns:

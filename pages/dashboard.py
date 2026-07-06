@@ -17,6 +17,7 @@ _COMPLEXITY_WEIGHTS = {
     "n_svc4_internal": 0.15,   # éventail service4 hors stockage externe (décisions débattables)
 }
 
+@st.cache_data(ttl=120, show_spinner=False)
 def _get_complexity_df() -> pd.DataFrame:
     rows = []
     for module in MODULES:
@@ -66,6 +67,7 @@ def _get_complexity_df() -> pd.DataFrame:
               .reset_index(drop=True))
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def _get_pn_df() -> tuple[pd.DataFrame, dict]:
     """Retourne (df par module, stats globales)."""
     rows = []
@@ -93,6 +95,7 @@ def _get_pn_df() -> tuple[pd.DataFrame, dict]:
     return df, global_stats
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def _get_all_stats() -> pd.DataFrame:
     rows = []
     for module in MODULES:
