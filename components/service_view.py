@@ -89,23 +89,21 @@ def _render_pn_row(pn: str, deca_rows: list[dict], module: str, mode: str,
     col_n.caption(f"{n} DECA{'s' if n > 1 else ''}")
     col_badges.markdown(badges)
 
+    svc4_opts = [""] + svc4_options(svc1, svc3)
+
     if mode == "reunion" and not locked:
-        # Sélecteur service4 + bouton valider ce PN
-        svc4_opts = [""] + svc4_options(svc1, svc3)
         current_svc4 = deca_rows[0].get("n_service4") or ""
-        sel_key = f"{key_prefix}_svc4_{pn}"
         try:
             idx = svc4_opts.index(current_svc4) if current_svc4 in svc4_opts else 0
         except ValueError:
             idx = 0
         chosen_svc4 = col_actions.selectbox(
             "Svc4", svc4_opts, index=idx,
-            key=sel_key, label_visibility="collapsed",
+            key=f"{key_prefix}_svc4_{pn}", label_visibility="collapsed",
         )
-        dec_key = f"{key_prefix}_dec_{pn}"
         chosen_dec = col_actions.radio(
             "Décision", ["VALIDÉ", "EN ATTENTE"], horizontal=True,
-            key=dec_key, label_visibility="collapsed",
+            key=f"{key_prefix}_dec_{pn}", label_visibility="collapsed",
         )
         if col_actions.button("✓ Valider", key=f"{key_prefix}_val_{pn}", use_container_width=True):
             for r in deca_rows:
@@ -114,34 +112,83 @@ def _render_pn_row(pn: str, deca_rows: list[dict], module: str, mode: str,
             st.rerun()
 
     elif mode == "precheck" and not locked:
-        # Pré-check flag rapide + svc4
-        svc4_opts = [""] + svc4_options(svc1, svc3)
         current_svc4 = deca_rows[0].get("n_service4") or ""
-        sel_key = f"{key_prefix}_svc4pc_{pn}"
         try:
             idx = svc4_opts.index(current_svc4) if current_svc4 in svc4_opts else 0
         except ValueError:
             idx = 0
         chosen_svc4 = col_actions.selectbox(
             "Svc4", svc4_opts, index=idx,
-            key=sel_key, label_visibility="collapsed",
+            key=f"{key_prefix}_svc4pc_{pn}", label_visibility="collapsed",
         )
         pc_opts = ["", "OK", "OK?", "NOK"]
         current_pc = deca_rows[0].get("pre_check") or ""
-        pc_key = f"{key_prefix}_pc_{pn}"
         try:
             pc_idx = pc_opts.index(current_pc)
         except ValueError:
             pc_idx = 0
         chosen_pc = col_actions.selectbox(
             "Pré-check", pc_opts, index=pc_idx,
-            key=pc_key, label_visibility="collapsed",
+            key=f"{key_prefix}_pc_{pn}", label_visibility="collapsed",
         )
         if col_actions.button("💾 Sauver", key=f"{key_prefix}_save_{pn}", use_container_width=True):
             for r in deca_rows:
                 _save(r["marquage"], pn, module, mode, svc3, svc1, chosen_svc4,
                       chosen_pc, "EN COURS", r.get("dec_commentaire") or "")
             st.rerun()
+
+    # ── Détail individuel par DECA (si plusieurs) ────────────────────────────
+    if n > 1 and not locked:
+        with st.expander(f"▼ Détail des {n} DECAs individuellement", expanded=False):
+            for r in deca_rows:
+                mq = r["marquage"]
+                r_locked = r.get("decision") in ("VALIDÉ", "EN ATTENTE")
+                c_mq, c_open, c_svc4, c_act = st.columns([2, 0.5, 3, 2])
+                badge = ("🔒" if r_locked else
+                         ("✅" if r.get("pre_check") == "OK" else
+                          "❌" if r.get("pre_check") == "NOK" else
+                          "⏳" if r.get("decision") == "EN ATTENTE" else "⚪"))
+                c_mq.caption(f"{badge} `{mq}`")
+                if c_open.button("🔍", key=f"{key_prefix}_dopen_{mq}",
+                                 help=f"Ouvrir fiche {mq}", use_container_width=True):
+                    show_deca_detail(mq)
+                if not r_locked:
+                    cur_svc4 = r.get("n_service4") or ""
+                    try:
+                        sidx = svc4_opts.index(cur_svc4) if cur_svc4 in svc4_opts else 0
+                    except ValueError:
+                        sidx = 0
+                    ind_svc4 = c_svc4.selectbox(
+                        "Svc4", svc4_opts, index=sidx,
+                        key=f"{key_prefix}_indsvc4_{mq}", label_visibility="collapsed",
+                    )
+                    if mode == "precheck":
+                        pc_opts = ["", "OK", "OK?", "NOK"]
+                        cur_pc = r.get("pre_check") or ""
+                        try:
+                            pidx = pc_opts.index(cur_pc)
+                        except ValueError:
+                            pidx = 0
+                        ind_pc = c_act.selectbox(
+                            "PC", pc_opts, index=pidx,
+                            key=f"{key_prefix}_indpc_{mq}", label_visibility="collapsed",
+                        )
+                        if c_act.button("💾", key=f"{key_prefix}_indsave_{mq}", use_container_width=True):
+                            _save(mq, pn, module, mode, svc3, svc1, ind_svc4,
+                                  ind_pc, "EN COURS", r.get("dec_commentaire") or "")
+                            st.rerun()
+                    else:
+                        ind_dec = c_act.radio(
+                            "Dec", ["VALIDÉ", "EN ATTENTE"], horizontal=True,
+                            key=f"{key_prefix}_inddec_{mq}", label_visibility="collapsed",
+                        )
+                        if c_act.button("✓", key=f"{key_prefix}_indval_{mq}", use_container_width=True):
+                            _save(mq, pn, module, mode, svc3, svc1, ind_svc4,
+                                  r.get("pre_check") or "", ind_dec, r.get("dec_commentaire") or "")
+                            st.rerun()
+                else:
+                    c_svc4.caption(r.get("n_service4") or "—")
+                    c_act.caption("🔒 verrouillé")
 
 
 # ── Section "Non assignés" ────────────────────────────────────────────────────
