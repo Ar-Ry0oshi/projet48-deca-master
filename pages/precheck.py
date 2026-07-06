@@ -360,13 +360,15 @@ def render():
         st.session_state["precheck_module"] = module
 
     with col_view:
+        _view_opts = ["Navigation PN", "Liste plate", "Par service"]
+        _view_keys = ["nav", "flat", "service"]
+        _cur_view  = st.session_state["precheck_view"]
+        _cur_idx   = _view_keys.index(_cur_view) if _cur_view in _view_keys else 0
         view = st.radio(
-            "Vue", ["Navigation PN", "Liste plate"],
-            index=0 if st.session_state["precheck_view"] == "nav" else 1,
-            horizontal=True,
-            label_visibility="collapsed",
+            "Vue", _view_opts, index=_cur_idx,
+            horizontal=True, label_visibility="collapsed",
         )
-        st.session_state["precheck_view"] = "nav" if view == "Navigation PN" else "flat"
+        st.session_state["precheck_view"] = _view_keys[_view_opts.index(view)]
 
     with col_search:
         result = pn_search_widget(key_prefix="precheck_top")
@@ -385,5 +387,8 @@ def render():
 
     if st.session_state["precheck_view"] == "nav":
         _render_nav_view(module, mode)
+    elif st.session_state["precheck_view"] == "service":
+        from components.service_view import render_service_view
+        render_service_view(module, mode, key_prefix="pc_sv")
     else:
         _render_flat_view(module, mode)
