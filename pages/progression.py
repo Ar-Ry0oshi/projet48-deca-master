@@ -83,16 +83,19 @@ def _scan_csv_dir() -> list[Path]:
 
 
 def _read_deca_csv(raw: bytes) -> pd.DataFrame:
-    try:
-        import chardet
-        enc = chardet.detect(raw[:10000])["encoding"] or "utf-8"
-    except ImportError:
-        enc = "utf-8-sig"
     sep = ";" if b";" in raw[:2000] else ","
-    df = pd.read_csv(
-        io.BytesIO(raw), dtype=str, encoding=enc, sep=sep,
-        on_bad_lines="skip", engine="python",
-    ).fillna("")
+    df = None
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            df = pd.read_csv(
+                io.BytesIO(raw), dtype=str, encoding=enc, sep=sep,
+                on_bad_lines="skip", engine="python",
+            ).fillna("")
+            break
+        except (UnicodeDecodeError, Exception):
+            continue
+    if df is None:
+        raise ValueError("Impossible de décoder le fichier CSV (encodage non reconnu).")
     df.columns = df.columns.str.strip().str.lower()
     for c in _SVC_COLS:
         if c not in df.columns:
