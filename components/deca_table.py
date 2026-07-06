@@ -268,6 +268,13 @@ def render_deca_table_editor(
     real_marquages = sorted([m["marquage"] for m in meta])
 
     # Chips cliquables (st.pills) — clic direct ouvre la fiche
+    # On passe par une clé "pending" pour ne jamais écrire dans la clé widget après instantiation
+    pills_pending_key = f"{key_prefix}_pills_pending_{pn_key}"
+    if st.session_state.get(pills_pending_key):
+        st.session_state[detail_key] = st.session_state[pills_pending_key]
+        st.session_state[pills_pending_key] = None
+        st.rerun()
+
     clicked = st.pills(
         "Ouvrir fiche",
         real_marquages,
@@ -276,9 +283,7 @@ def render_deca_table_editor(
         label_visibility="collapsed",
     )
     if clicked:
-        st.session_state[detail_key] = clicked
-        # Réinitialise la sélection pour éviter la réouverture au prochain run
-        st.session_state[f"{key_prefix}_pills_{pn_key}"] = None
+        st.session_state[pills_pending_key] = clicked
         st.rerun()
 
     # Dropdown de recherche + bouton ouvrir (pour chercher rapidement par frappe)
