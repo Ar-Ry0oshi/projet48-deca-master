@@ -264,11 +264,27 @@ def render_deca_table_editor(
         num_rows="fixed",
     )
 
-    # ── Bouton "Voir détail" sous le tableau ──────────────────────────────────
-    real_marquages = [m["marquage"] for m in meta]
+    # ── Bouton "Voir détail" — chips cliquables + dropdown recherche ──────────
+    real_marquages = sorted([m["marquage"] for m in meta])
+
+    # Chips cliquables (st.pills) — clic direct ouvre la fiche
+    clicked = st.pills(
+        "Ouvrir fiche",
+        real_marquages,
+        selection_mode="single",
+        key=f"{key_prefix}_pills_{pn_key}",
+        label_visibility="collapsed",
+    )
+    if clicked:
+        st.session_state[detail_key] = clicked
+        # Réinitialise la sélection pour éviter la réouverture au prochain run
+        st.session_state[f"{key_prefix}_pills_{pn_key}"] = None
+        st.rerun()
+
+    # Dropdown de recherche + bouton ouvrir (pour chercher rapidement par frappe)
     col_sel, col_btn, _ = st.columns([2, 1, 5])
     selected_mq = col_sel.selectbox(
-        "Voir détail", real_marquages,
+        "Rechercher", real_marquages,
         key=f"{key_prefix}_detail_sel_{pn_key}",
         label_visibility="collapsed",
     )
