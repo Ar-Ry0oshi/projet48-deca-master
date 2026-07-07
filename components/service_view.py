@@ -310,7 +310,7 @@ def render_service_view(module: str, mode: str, key_prefix: str = "sv"):
                     all_unlocked = [r for drs in pn_groups.values() for r in drs
                                     if r.get("decision") not in ("VALIDÉ", "EN ATTENTE")]
                     if all_unlocked:
-                        bulk_key = f"{key_prefix}_bulk_{svc3[:10]}_{svc4[:10]}"
+                        bulk_key = f"{key_prefix}_bulk_{_h}"
                         if st.button(
                             f"✅ Valider tout '{svc4_label}' ({len(all_unlocked)} DECAs)",
                             key=bulk_key, type="secondary", use_container_width=False,
