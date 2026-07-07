@@ -176,7 +176,7 @@ def _render_photos(marquage: str):
         st.caption(f"`{photos[0].name}`")
 
     try:
-        st.image(str(photos[idx]), width=None)  # pleine largeur sans use_container_width déprécié
+        st.image(str(photos[idx]), use_container_width=True)
     except Exception as e:
         st.error(f"Impossible d'afficher la photo : {e}")
 
