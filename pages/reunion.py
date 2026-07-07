@@ -297,6 +297,37 @@ def _render_flat_view(module: str):
         })
 
     df = pd.DataFrame(flat_rows)
+
+    # ── Filtres ───────────────────────────────────────────────────────────────
+    with st.expander("🔍 Filtres", expanded=False):
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        f_svc3_act = fc1.multiselect(
+            "Service 3 actuel", sorted(df["service3"].dropna().unique().tolist()),
+            key="reu_flat_f_svc3_act", placeholder="Tous",
+        )
+        f_svc3_new = fc2.multiselect(
+            "N.Service 3", sorted(df["n_service3"].replace("", None).dropna().unique().tolist()),
+            key="reu_flat_f_svc3_new", placeholder="Tous",
+        )
+        f_pc = fc3.multiselect(
+            "Pré-check", ["", "OK", "OK?", "NOK"],
+            key="reu_flat_f_pc", placeholder="Tous",
+        )
+        f_dec = fc4.multiselect(
+            "Décision", ["", "VALIDÉ", "EN ATTENTE"],
+            key="reu_flat_f_dec", placeholder="Tous",
+        )
+    if f_svc3_act:
+        df = df[df["service3"].isin(f_svc3_act)]
+    if f_svc3_new:
+        df = df[df["n_service3"].isin(f_svc3_new)]
+    if f_pc:
+        df = df[df["pre_check"].isin(f_pc)]
+    if f_dec:
+        df = df[df["decision"].isin(f_dec)]
+
+    st.caption(f"{len(df)} ligne(s) affichée(s)")
+
     col_order = ["pn_short", "marquage", "ref_constructeur", "service3", "pre_check",
                  "n_service3", "n_service4", "decision", "commentaire"]
 
