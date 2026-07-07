@@ -300,8 +300,10 @@ def render_service_view(module: str, mode: str, key_prefix: str = "sv"):
                 )
 
                 for pn, deca_rows in sorted(pn_groups.items()):
+                    import hashlib
+                    _h = hashlib.md5(f"{svc3}||{svc4}".encode()).hexdigest()[:8]
                     _render_pn_row(pn, deca_rows, module, mode, svc3, svc1,
-                                   key_prefix=f"{key_prefix}_{abs(hash(svc3+svc4)) % 99999}")
+                                   key_prefix=f"{key_prefix}_{_h}")
 
                 # Bouton valider tout le service4 (réunion uniquement)
                 if mode == "reunion":
