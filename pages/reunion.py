@@ -288,6 +288,7 @@ def _render_flat_view(module: str):
             "marquage":         r["marquage"],
             "ref_constructeur": r.get("ref_constructeur") or "",
             "service3":         r.get("service3") or "",
+            "localisation3":    r.get("localisation3") or "",
             "pre_check":        dec.get("pre_check") or "",
             "n_service3":       n3_disp,
             "n_service4":       n4_disp,
@@ -300,27 +301,41 @@ def _render_flat_view(module: str):
 
     # ── Filtres ───────────────────────────────────────────────────────────────
     with st.expander("🔍 Filtres", expanded=False):
-        fc1, fc2, fc3, fc4 = st.columns(4)
+        fc1, fc2 = st.columns(2)
         f_svc3_act = fc1.multiselect(
             "Service 3 actuel", sorted(df["service3"].dropna().unique().tolist()),
             key="reu_flat_f_svc3_act", placeholder="Tous",
         )
-        f_svc3_new = fc2.multiselect(
+        f_loc3 = fc2.multiselect(
+            "Localisation 3 actuelle", sorted(df["localisation3"].replace("", None).dropna().unique().tolist()),
+            key="reu_flat_f_loc3", placeholder="Tous",
+        )
+        fc3, fc4 = st.columns(2)
+        f_svc3_new = fc3.multiselect(
             "N.Service 3", sorted(df["n_service3"].replace("", None).dropna().unique().tolist()),
             key="reu_flat_f_svc3_new", placeholder="Tous",
         )
-        f_pc = fc3.multiselect(
-            "Pré-check", ["", "OK", "OK?", "NOK"],
+        f_svc4_new = fc4.multiselect(
+            "N.Service 4", sorted(df["n_service4"].replace("", None).dropna().unique().tolist()),
+            key="reu_flat_f_svc4_new", placeholder="Tous",
+        )
+        fc5, fc6 = st.columns(2)
+        f_pc = fc5.multiselect(
+            "Pré-check", ["OK", "OK?", "NOK"],
             key="reu_flat_f_pc", placeholder="Tous",
         )
-        f_dec = fc4.multiselect(
-            "Décision", ["", "VALIDÉ", "EN ATTENTE"],
+        f_dec = fc6.multiselect(
+            "Décision", ["VALIDÉ", "EN ATTENTE"],
             key="reu_flat_f_dec", placeholder="Tous",
         )
     if f_svc3_act:
         df = df[df["service3"].isin(f_svc3_act)]
+    if f_loc3:
+        df = df[df["localisation3"].isin(f_loc3)]
     if f_svc3_new:
         df = df[df["n_service3"].isin(f_svc3_new)]
+    if f_svc4_new:
+        df = df[df["n_service4"].isin(f_svc4_new)]
     if f_pc:
         df = df[df["pre_check"].isin(f_pc)]
     if f_dec:

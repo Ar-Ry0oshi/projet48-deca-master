@@ -286,23 +286,36 @@ def _render_flat_view(module: str, mode: str):
 
     # ── Filtres ───────────────────────────────────────────────────────────────
     with st.expander("🔍 Filtres", expanded=False):
-        fc1, fc2, fc3 = st.columns(3)
+        fc1, fc2 = st.columns(2)
         f_svc3_act = fc1.multiselect(
             "Service 3 actuel", sorted(df["service3"].dropna().unique().tolist()),
             key="flat_f_svc3_act", placeholder="Tous",
         )
-        f_svc3_new = fc2.multiselect(
+        f_loc3 = fc2.multiselect(
+            "Localisation 3 actuelle", sorted(df["localisation3"].replace("", None).dropna().unique().tolist()),
+            key="flat_f_loc3", placeholder="Tous",
+        )
+        fc3, fc4 = st.columns(2)
+        f_svc3_new = fc3.multiselect(
             "N.Service 3", sorted(df["n_service3"].replace("", None).dropna().unique().tolist()),
             key="flat_f_svc3_new", placeholder="Tous",
         )
-        f_pc = fc3.multiselect(
-            "Pré-check", ["", "OK", "OK?", "NOK"],
+        f_svc4_new = fc4.multiselect(
+            "N.Service 4", sorted(df["n_service4"].replace("", None).dropna().unique().tolist()),
+            key="flat_f_svc4_new", placeholder="Tous",
+        )
+        f_pc = st.multiselect(
+            "Pré-check", ["OK", "OK?", "NOK"],
             key="flat_f_pc", placeholder="Tous",
         )
     if f_svc3_act:
         df = df[df["service3"].isin(f_svc3_act)]
+    if f_loc3:
+        df = df[df["localisation3"].isin(f_loc3)]
     if f_svc3_new:
         df = df[df["n_service3"].isin(f_svc3_new)]
+    if f_svc4_new:
+        df = df[df["n_service4"].isin(f_svc4_new)]
     if f_pc:
         df = df[df["pre_check"].isin(f_pc)]
 
