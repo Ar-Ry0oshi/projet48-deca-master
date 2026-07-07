@@ -306,7 +306,7 @@ def _render_flat_view(module: str, mode: str):
         },
         disabled=["pn_short", "marquage", "ref_constructeur", "service3", "localisation3", "assy_flag"],
         hide_index=True,
-        width='stretch',
+        use_container_width=True,
         key=f"flat_editor_{module}",
         num_rows="fixed",
     )

@@ -108,7 +108,7 @@ def render():
             "changed_by":   st.column_config.TextColumn("Par", width="small"),
         },
         hide_index=True,
-        width='stretch',
+        use_container_width=True,
     )
 
     # ── Export CSV ────────────────────────────────────────────────────────────

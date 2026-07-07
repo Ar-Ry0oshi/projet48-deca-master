@@ -245,7 +245,7 @@ def _render_kpi_table(kpi_a: dict, kpi_b: dict, label_a: str, label_b: str):
     st.dataframe(
         df_kpi,
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
         column_config={
             "Niveau": st.column_config.TextColumn("Niveau", width="small"),
             f"Progression {label_b}": st.column_config.TextColumn("Progression", width="large"),

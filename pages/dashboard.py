@@ -169,7 +169,7 @@ def render():
         df,
         column_config=col_cfg,
         hide_index=True,
-        width='stretch',
+        use_container_width=True,
     )
 
     st.divider()
@@ -198,7 +198,7 @@ def render():
         st.dataframe(
             df_pn,
             hide_index=True,
-            width="stretch",
+            use_container_width=True,
             column_config={
                 "Module":       st.column_config.TextColumn("Module", width="small"),
                 "PNs total":    st.column_config.NumberColumn("PNs total", width="small"),
@@ -230,7 +230,7 @@ def render():
         st.dataframe(
             df_cx_restant,
             hide_index=True,
-            width="stretch",
+            use_container_width=True,
             column_config={
                 "Module":          st.column_config.TextColumn("Module", width="small"),
                 "DECAs restants":  st.column_config.NumberColumn("Restants", width="small"),

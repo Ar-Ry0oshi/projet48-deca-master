@@ -15,4 +15,4 @@ def render_excluded(excluded_df: pd.DataFrame):
             "marquage", "ref_constructeur", "exclusion_reason",
             "service1", "service2", "service3", "etat",
         ] if c in excluded_df.columns]
-        st.dataframe(excluded_df[display_cols], hide_index=True, width='stretch')
+        st.dataframe(excluded_df[display_cols], hide_index=True, use_container_width=True)

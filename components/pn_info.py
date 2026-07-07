@@ -79,5 +79,5 @@ def render_pn_info(pn_short: str, active_df: pd.DataFrame):
                         "%":      st.column_config.TextColumn("%",      width="small"),
                     },
                     hide_index=True,
-                    width='stretch',
+                    use_container_width=True,
                 )
