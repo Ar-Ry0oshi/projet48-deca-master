@@ -30,15 +30,15 @@ def render_progress_bar(stats: dict):
         f"— {pct_v_pct}% finalisé · {pct_v_pct + pct_p_pct}% pré-checké"
     )
 
-    # Barre HTML bicolore
+    # Barre HTML bicolore — gris prend le reste via flex:1 pour éviter les gaps d'arrondi
     bar_html = f"""
     <div style="
         display:flex; height:10px; border-radius:5px; overflow:hidden;
         background:#e0e0e0; margin-bottom:8px;
     ">
-        <div style="width:{pct_v*100:.1f}%; background:#21c354;"></div>
-        <div style="width:{pct_p*100:.1f}%; background:#f0a500;"></div>
-        <div style="width:{pct_e*100:.1f}%; background:#e0e0e0;"></div>
+        <div style="width:{pct_v*100:.2f}%; background:#21c354; flex-shrink:0;"></div>
+        <div style="width:{pct_p*100:.2f}%; background:#f0a500; flex-shrink:0;"></div>
+        <div style="flex:1; background:#e0e0e0;"></div>
     </div>
     <div style="display:flex; gap:16px; font-size:0.75em; margin-bottom:4px;">
         <span><span style="color:#21c354;">■</span> Validé/Attente ({valide})</span>
