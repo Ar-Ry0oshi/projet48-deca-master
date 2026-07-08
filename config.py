@@ -8,7 +8,15 @@ EXPORTS_DIR = ROOT / "exports"
 LOGS_DIR = ROOT / "logs"
 
 # Extraits DECA bruts (pour la page Progression)
-DECA_EXTRACTS_DIR = ROOT / ".." / ".." / "01_DATA_SOURCES" / "DECA_Extracts" / "CSV"
+def _find_data_sources_dir(start: Path) -> Path:
+    """Remonte l'arborescence jusqu'à trouver un dossier '01_DATA_SOURCES'."""
+    for parent in [start, *start.parents]:
+        candidate = parent / "01_DATA_SOURCES"
+        if candidate.is_dir():
+            return candidate
+    return start / ".." / ".." / "01_DATA_SOURCES"  # fallback relatif
+
+DECA_EXTRACTS_DIR = _find_data_sources_dir(ROOT) / "DECA_Extracts" / "CSV"
 
 # Référentiel services
 SERVICES_REF_PATH = ROOT / "ref" / "SERVICES_EXTRACT.xlsx"
