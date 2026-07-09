@@ -322,6 +322,74 @@ class DECADetailDialog(QDialog):
             self._load(self._marquages[self._idx])
 
 
+# ── Barre de filtres par colonne ─────────────────────────────────────────────
+
+class ColumnFilterBar(QWidget):
+    """Une QLineEdit par colonne, alignée sous les en-têtes de la table."""
+
+    def __init__(self, table: QTableWidget, parent=None):
+        super().__init__(parent)
+        self._table = table
+        self._filters: list[QLineEdit] = []
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        for header in HEADERS:
+            le = QLineEdit()
+            le.setPlaceholderText(header[:10])
+            le.setFixedHeight(22)
+            le.setStyleSheet("border:1px solid #bbb; padding:1px 3px; font-size:11px;")
+            le.textChanged.connect(self._apply)
+            layout.addWidget(le)
+            self._filters.append(le)
+
+        layout.addStretch(0)
+
+        table.horizontalHeader().sectionResized.connect(self._sync)
+        table.horizontalHeader().sectionHidden.connect(self._sync)
+
+    def _sync(self, *_):
+        for col, le in enumerate(self._filters):
+            if self._table.isColumnHidden(col):
+                le.hide()
+            else:
+                le.show()
+                le.setFixedWidth(self._table.columnWidth(col))
+
+    def sync_now(self):
+        self._sync()
+
+    def clear_all(self):
+        for le in self._filters:
+            le.blockSignals(True)
+            le.clear()
+            le.blockSignals(False)
+        self._apply()
+
+    def _apply(self):
+        texts = [le.text().lower() for le in self._filters]
+        for row in range(self._table.rowCount()):
+            visible = True
+            for col, text in enumerate(texts):
+                if not text:
+                    continue
+                cell_text = ""
+                item = self._table.item(row, col)
+                if item:
+                    cell_text = item.text().lower()
+                widget = self._table.cellWidget(row, col)
+                if isinstance(widget, QComboBox):
+                    cell_text = widget.currentText().lower()
+                elif isinstance(widget, QLineEdit):
+                    cell_text = widget.text().lower()
+                if text not in cell_text:
+                    visible = False
+                    break
+            self._table.setRowHidden(row, not visible)
+
+
 # ── Ligne DECA ────────────────────────────────────────────────────────────────
 
 class DECARow:
@@ -586,19 +654,15 @@ class MainWindow(QMainWindow):
         hdr.addWidget(self.lbl_pn, stretch=1)
         rl.addLayout(hdr)
 
-        # Filtre lignes
-        filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("Filtrer les lignes :"))
-        self.filter_table = QLineEdit()
-        self.filter_table.setPlaceholderText("Texte dans n'importe quelle colonne…")
-        self.filter_table.textChanged.connect(self._filter_table_rows)
-        filter_row.addWidget(self.filter_table)
-        filter_row.addWidget(QLabel("(clic droit sur l'en-tête → cacher/afficher colonnes)"))
-        rl.addLayout(filter_row)
-
-        # Table
+        # Table + barre de filtres
         self.table = DECATable()
+        self.col_filters = ColumnFilterBar(self.table)
+        rl.addWidget(self.col_filters)
         rl.addWidget(self.table)
+
+        hint = QLabel("💡 Clic droit sur l'en-tête → cacher/afficher colonnes  ·  Double-clic → fiche outil")
+        hint.setStyleSheet("color:#888; font-size:11px;")
+        rl.addWidget(hint)
 
         # Boutons action
         btn_row = QHBoxLayout()
@@ -677,29 +741,6 @@ class MainWindow(QMainWindow):
                 match = False
             item.setHidden(not match)
 
-    def _filter_table_rows(self, text: str):
-        text = text.lower()
-        for row in range(self.table.rowCount()):
-            visible = False
-            if not text:
-                visible = True
-            else:
-                for col in range(self.table.columnCount()):
-                    item = self.table.item(row, col)
-                    if item and text in item.text().lower():
-                        visible = True
-                        break
-                    widget = self.table.cellWidget(row, col)
-                    if widget and isinstance(widget, QComboBox):
-                        if text in widget.currentText().lower():
-                            visible = True
-                            break
-                    if widget and isinstance(widget, QLineEdit):
-                        if text in widget.text().lower():
-                            visible = True
-                            break
-            self.table.setRowHidden(row, not visible)
-
     def _update_stats(self):
         total = len(self._pn_items)
         done  = sum(1 for it in self._pn_items if it.data(Qt.ItemDataRole.UserRole)["done"])
@@ -713,8 +754,9 @@ class MainWindow(QMainWindow):
         pn = item.data(Qt.ItemDataRole.UserRole)["pn"]
         self._current_pn = pn
         self.lbl_pn.setText(f"PN :  {pn}")
-        self.filter_table.clear()
+        self.col_filters.clear_all()
         self.table.load_pn(pn, self._module)
+        self.col_filters.sync_now()
 
     def _next_pn(self):
         for i in range(self.pn_list.count()):
