@@ -220,7 +220,8 @@ def get_stats_for_module(module: str) -> dict:
         SELECT
             COUNT(CASE WHEN d.decision = 'VALIDÉ'                          THEN 1 END) AS valide,
             COUNT(CASE WHEN d.decision = 'EN ATTENTE'                      THEN 1 END) AS en_attente,
-            COUNT(CASE WHEN d.pre_check IS NOT NULL AND d.pre_check != ''  THEN 1 END) AS precheck,
+            COUNT(CASE WHEN d.pre_check IS NOT NULL AND d.pre_check != ''
+                            AND d.decision NOT IN ('VALIDÉ','EN ATTENTE')  THEN 1 END) AS precheck,
             COUNT(CASE WHEN d.decision = 'EN COURS' OR d.decision IS NULL  THEN 1 END) AS en_cours,
             COUNT(t.marquage)                                                            AS total
         FROM tools t
