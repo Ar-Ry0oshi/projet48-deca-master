@@ -1,10 +1,11 @@
 """
 DECA Manager — attribution des services, mode utilisateur.
-PyQt6 — tableau Excel-like par PN, saisie directe → VALIDÉ, export XLSX.
+PyQt6 — tableau Excel-like par PN, fiche détail, photos, export XLSX.
 Partage decisions.db avec le dashboard Streamlit (lecture seule côté Streamlit).
 """
 import sys
 from pathlib import Path
+from functools import lru_cache
 
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
@@ -14,13 +15,14 @@ from PyQt6.QtWidgets import (
     QSplitter, QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem,
     QComboBox, QLabel, QPushButton, QLineEdit, QHeaderView,
     QMessageBox, QFileDialog, QAbstractItemView, QStatusBar,
+    QDialog, QGridLayout, QScrollArea, QMenu, QFrame, QSizePolicy,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtCore import Qt, QSortFilterProxyModel
+from PyQt6.QtGui import QColor, QFont, QPalette, QPixmap, QAction
 
 import pandas as pd
 
-from config import MODULES
+from config import MODULES, PHOTOS_DIR
 from db import queries
 from services import (
     svc3_labeled_options, svc3_from_label, svc3_label,
@@ -32,22 +34,25 @@ from services import (
 C_VALIDE   = "#d4edda"
 C_EN_COURS = "#ffffff"
 C_LOCKED   = "#f0f0f0"
-C_HEADER   = "#dce6f1"
 
 # ── Index colonnes ────────────────────────────────────────────────────────────
 COL_MARQ  = 0
 COL_REF   = 1
 COL_SVC3  = 2
 COL_LOC   = 3
-COL_NSVC3 = 4
-COL_NSVC4 = 5
-COL_COMM  = 6
-COL_STAT  = 7
+COL_ASSY  = 4
+COL_CPXTY = 5
+COL_NSVC3 = 6
+COL_NSVC4 = 7
+COL_COMM  = 8
+COL_STAT  = 9
 
 HEADERS = [
     "Marquage", "Réf constructeur", "Service 3 actuel",
-    "Localisation", "N.Service 3", "N.Service 4", "Commentaire", "Statut",
+    "Localisation", "Assemblage", "Complexité",
+    "N.Service 3", "N.Service 4", "Commentaire", "Statut",
 ]
+COL_WIDTHS = [110, 150, 150, 120, 70, 100, 210, 210, 160, 80]
 
 
 def _ro_item(text: str, bg: str) -> QTableWidgetItem:
@@ -55,6 +60,266 @@ def _ro_item(text: str, bg: str) -> QTableWidgetItem:
     item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
     item.setBackground(QColor(bg))
     return item
+
+
+# ── Recherche photos ──────────────────────────────────────────────────────────
+
+@lru_cache(maxsize=1)
+def _photo_index() -> list[Path]:
+    if not PHOTOS_DIR or not PHOTOS_DIR.exists():
+        return []
+    paths = []
+    for ext in ("*.jpg", "*.JPG", "*.jpeg", "*.JPEG"):
+        paths.extend(sorted(PHOTOS_DIR.glob(ext)))
+    return paths
+
+
+def _find_photos(marquage: str) -> list[Path]:
+    results, seen = [], set()
+    for f in _photo_index():
+        stem = f.stem.replace(" ", "").replace("-", "").replace("_", "")
+        if (marquage in stem or marquage in f.stem) and f not in seen:
+            seen.add(f)
+            results.append(f)
+    return results
+
+
+# ── Fiche outil ───────────────────────────────────────────────────────────────
+
+class DECADetailDialog(QDialog):
+    def __init__(self, marquage: str, pn_marquages: list[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Fiche outil")
+        self.resize(1000, 680)
+        self._marquages = pn_marquages
+        self._idx = pn_marquages.index(marquage) if marquage in pn_marquages else 0
+        self._photos: list[Path] = []
+        self._photo_idx = 0
+        self._setup_ui()
+        self._load(self._marquages[self._idx])
+
+    def _setup_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
+
+        # ── Barre navigation DECA ─────────────────────────────────────────
+        nav = QHBoxLayout()
+        self.btn_prev_deca = QPushButton("◄  DECA précédent")
+        self.btn_prev_deca.clicked.connect(self._prev_deca)
+        nav.addWidget(self.btn_prev_deca)
+        self.lbl_deca_ctr = QLabel("")
+        self.lbl_deca_ctr.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        font_b = QFont(); font_b.setBold(True); font_b.setPointSize(11)
+        self.lbl_deca_ctr.setFont(font_b)
+        nav.addWidget(self.lbl_deca_ctr, stretch=1)
+        self.btn_next_deca = QPushButton("DECA suivant  ►")
+        self.btn_next_deca.clicked.connect(self._next_deca)
+        nav.addWidget(self.btn_next_deca)
+        root.addLayout(nav)
+
+        line = QFrame(); line.setFrameShape(QFrame.Shape.HLine)
+        root.addWidget(line)
+
+        # ── Corps : infos gauche + photos droite ──────────────────────────
+        body = QHBoxLayout()
+
+        # Infos (scrollable)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        info_widget = QWidget()
+        self.info_layout = QVBoxLayout(info_widget)
+        self.info_layout.setContentsMargins(0, 0, 8, 0)
+        scroll.setWidget(info_widget)
+        body.addWidget(scroll, stretch=3)
+
+        # Photos
+        photo_panel = QVBoxLayout()
+        self.lbl_photo = QLabel("Pas de photo")
+        self.lbl_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_photo.setMinimumSize(320, 320)
+        self.lbl_photo.setStyleSheet("border:1px solid #ccc; background:#f8f8f8;")
+        photo_panel.addWidget(self.lbl_photo)
+
+        photo_nav = QHBoxLayout()
+        self.btn_prev_photo = QPushButton("◄")
+        self.btn_prev_photo.setFixedWidth(40)
+        self.btn_prev_photo.clicked.connect(self._prev_photo)
+        self.lbl_photo_ctr = QLabel("")
+        self.lbl_photo_ctr.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.btn_next_photo = QPushButton("►")
+        self.btn_next_photo.setFixedWidth(40)
+        self.btn_next_photo.clicked.connect(self._next_photo)
+        photo_nav.addWidget(self.btn_prev_photo)
+        photo_nav.addWidget(self.lbl_photo_ctr, stretch=1)
+        photo_nav.addWidget(self.btn_next_photo)
+        photo_panel.addLayout(photo_nav)
+
+        body.addLayout(photo_panel, stretch=2)
+        root.addLayout(body)
+
+        # ── Bouton fermer ─────────────────────────────────────────────────
+        btn_close = QPushButton("Fermer")
+        btn_close.clicked.connect(self.close)
+        root.addWidget(btn_close, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def _load(self, marquage: str):
+        self.setWindowTitle(f"Fiche outil — {marquage}")
+        idx = self._marquages.index(marquage) if marquage in self._marquages else 0
+        self._idx = idx
+
+        # Compteur navigation
+        n = len(self._marquages)
+        self.lbl_deca_ctr.setText(f"{marquage}  ({idx + 1} / {n})")
+        self.btn_prev_deca.setEnabled(idx > 0)
+        self.btn_next_deca.setEnabled(idx < n - 1)
+
+        # Effacer infos précédentes
+        while self.info_layout.count():
+            item = self.info_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # Charger données
+        tool = queries.get_tool(marquage)
+        dec  = queries.get_decision(marquage)
+        tool_d = dict(tool) if tool else {}
+        dec_d  = dict(dec)  if dec  else {}
+
+        self._add_section("Identification")
+        self._add_grid([
+            ("Marquage",        tool_d.get("marquage")),
+            ("Réf constructeur",tool_d.get("ref_constructeur")),
+            ("PN",              tool_d.get("pn_short")),
+            ("État",            tool_d.get("etat")),
+            ("Disponible",      tool_d.get("disponible")),
+            ("Famille",         tool_d.get("famille")),
+            ("Sous-famille",    tool_d.get("sous_famille")),
+            ("Type",            tool_d.get("type_outil")),
+            ("Constructeur",    tool_d.get("constructeur")),
+            ("N° série",        tool_d.get("nserie")),
+        ])
+
+        self._add_section("Services actuels")
+        self._add_grid([
+            ("Service 1", tool_d.get("service1")),
+            ("Service 2", tool_d.get("service2")),
+            ("Service 3", tool_d.get("service3")),
+            ("Service 4", tool_d.get("service4")),
+            ("Localisation 1", tool_d.get("localisation1")),
+            ("Localisation 2", tool_d.get("localisation2")),
+            ("Localisation 3", tool_d.get("localisation3")),
+            ("Localisation 4", tool_d.get("localisation4")),
+        ])
+
+        self._add_section("Modules & flags")
+        self._add_grid([
+            ("Modules",      tool_d.get("modules_effective")),
+            ("Source",       tool_d.get("module_source")),
+            ("Assemblage",   tool_d.get("assy_flag")),
+            ("Complexité",   tool_d.get("complexity_flag")),
+            ("ICV",          tool_d.get("opcodes_translated")),
+            ("PROCOP",       tool_d.get("procop")),
+        ])
+
+        if tool_d.get("commentaire"):
+            self._add_section("Commentaire outil")
+            lbl = QLabel(tool_d["commentaire"])
+            lbl.setWordWrap(True)
+            lbl.setStyleSheet("background:#fff8e1; padding:6px; border-radius:4px;")
+            self.info_layout.addWidget(lbl)
+
+        self._add_section("Décision")
+        if dec_d:
+            self._add_grid([
+                ("Statut",      dec_d.get("decision")),
+                ("Pré-check",   dec_d.get("pre_check")),
+                ("N.Service 1", dec_d.get("n_service1")),
+                ("N.Service 2", dec_d.get("n_service2")),
+                ("N.Service 3", dec_d.get("n_service3")),
+                ("N.Service 4", dec_d.get("n_service4")),
+                ("Commentaire", dec_d.get("commentaire")),
+                ("Mis à jour",  dec_d.get("updated_at")),
+                ("Par",         dec_d.get("updated_by")),
+            ])
+        else:
+            self.info_layout.addWidget(QLabel("Aucune décision enregistrée."))
+
+        self.info_layout.addStretch()
+
+        # Photos
+        self._photos = _find_photos(marquage)
+        self._photo_idx = 0
+        self._show_photo()
+
+    def _add_section(self, title: str):
+        lbl = QLabel(f"<b>{title}</b>")
+        lbl.setStyleSheet("margin-top:8px; color:#1a5276;")
+        self.info_layout.addWidget(lbl)
+        line = QFrame(); line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet("color:#aaa;")
+        self.info_layout.addWidget(line)
+
+    def _add_grid(self, pairs: list[tuple]):
+        grid_w = QWidget()
+        grid = QGridLayout(grid_w)
+        grid.setContentsMargins(4, 2, 4, 2)
+        grid.setSpacing(4)
+        row = 0
+        for label, value in pairs:
+            if value is None or value == "":
+                continue
+            lbl_k = QLabel(f"<span style='color:#555;'>{label}</span>")
+            lbl_v = QLabel(f"<b>{value}</b>")
+            lbl_v.setWordWrap(True)
+            grid.addWidget(lbl_k, row, 0)
+            grid.addWidget(lbl_v, row, 1)
+            row += 1
+        if row == 0:
+            return
+        self.info_layout.addWidget(grid_w)
+
+    def _show_photo(self):
+        if not self._photos:
+            self.lbl_photo.setText("Pas de photo disponible\n(dossier réseau non accessible\nou aucune photo trouvée)")
+            self.lbl_photo_ctr.setText("")
+            self.btn_prev_photo.setEnabled(False)
+            self.btn_next_photo.setEnabled(False)
+            return
+
+        n = len(self._photos)
+        self.lbl_photo_ctr.setText(f"{self._photo_idx + 1} / {n}")
+        self.btn_prev_photo.setEnabled(self._photo_idx > 0)
+        self.btn_next_photo.setEnabled(self._photo_idx < n - 1)
+
+        path = self._photos[self._photo_idx]
+        px = QPixmap(str(path))
+        if px.isNull():
+            self.lbl_photo.setText("Impossible de charger la photo.")
+        else:
+            self.lbl_photo.setPixmap(
+                px.scaled(self.lbl_photo.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                          Qt.TransformationMode.SmoothTransformation)
+            )
+
+    def _prev_photo(self):
+        self._photo_idx = max(0, self._photo_idx - 1)
+        self._show_photo()
+
+    def _next_photo(self):
+        self._photo_idx = min(len(self._photos) - 1, self._photo_idx + 1)
+        self._show_photo()
+
+    def _prev_deca(self):
+        if self._idx > 0:
+            self._idx -= 1
+            self._load(self._marquages[self._idx])
+
+    def _next_deca(self):
+        if self._idx < len(self._marquages) - 1:
+            self._idx += 1
+            self._load(self._marquages[self._idx])
 
 
 # ── Ligne DECA ────────────────────────────────────────────────────────────────
@@ -66,14 +331,14 @@ class DECARow:
         self.ref        = row_data.get("ref_constructeur") or ""
         self.svc3_cur   = row_data.get("service3") or ""
         self.loc        = row_data.get("localisation3") or ""
+        self.assy       = row_data.get("assy_flag") or ""
+        self.complexity = row_data.get("complexity_flag") or ""
         self.locked     = bool(dec and dec.get("decision") in ("VALIDÉ", "EN ATTENTE"))
         self.statut     = (dec or {}).get("decision") or "EN COURS"
-
         self.n_svc3_plain = (dec or {}).get("n_service3") or ""
         self.n_svc4_plain = (dec or {}).get("n_service4") or ""
         self.n_svc1       = (dec or {}).get("n_service1") or ""
         self.commentaire  = (dec or {}).get("commentaire") or ""
-
         self.combo_svc3: QComboBox | None = None
         self.combo_svc4: QComboBox | None = None
         self.edit_comm:  QLineEdit | None = None
@@ -90,32 +355,66 @@ class DECATable(QTableWidget):
         self.setColumnCount(len(HEADERS))
         self.setHorizontalHeaderLabels(HEADERS)
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.horizontalHeader().setStretchLastSection(False)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.verticalHeader().setVisible(False)
         self.setShowGrid(True)
-        self.setAlternatingRowColors(False)
+        self.setSortingEnabled(True)
 
-        for col, w in enumerate([110, 140, 150, 120, 210, 210, 160, 80]):
+        for col, w in enumerate(COL_WIDTHS):
             self.setColumnWidth(col, w)
 
-        # Style header
         self.horizontalHeader().setStyleSheet(
-            "QHeaderView::section { background:#dce6f1; font-weight:bold; padding:4px; border:1px solid #bbb; }"
+            "QHeaderView::section { background:#dce6f1; font-weight:bold; "
+            "padding:4px; border:1px solid #bbb; }"
         )
 
+        # Menu cacher/afficher colonnes
+        self.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.horizontalHeader().customContextMenuRequested.connect(self._column_menu)
+
+        # Double-clic → fiche
+        self.doubleClicked.connect(self._on_double_click)
+
+    def _column_menu(self, pos):
+        menu = QMenu(self)
+        for col, header in enumerate(HEADERS):
+            action = menu.addAction(header)
+            action.setCheckable(True)
+            action.setChecked(not self.isColumnHidden(col))
+            action.setData(col)
+        chosen = menu.exec(self.horizontalHeader().mapToGlobal(pos))
+        if chosen:
+            col = chosen.data()
+            self.setColumnHidden(col, not self.isColumnHidden(col))
+
+    def _on_double_click(self, index):
+        row = index.row()
+        if row < len(self._rows):
+            self._open_detail(self._rows[row].marquage)
+
+    def _open_detail(self, marquage: str):
+        all_mqs = [r.marquage for r in self._rows]
+        dlg = DECADetailDialog(marquage, all_mqs, self)
+        dlg.exec()
+
     def load_pn(self, pn: str, module: str):
+        self.setSortingEnabled(False)
         self._rows.clear()
         self.setRowCount(0)
 
         all_tools = queries.get_tools_for_module(module)
         active = [dict(r) for r in all_tools if r["pn_short"] == pn and not r["is_excluded"]]
+        decisions = queries.get_decisions_batch_for_module(module)
 
         for rd in active:
-            dec = queries.get_decision(rd["marquage"])
-            drow = DECARow(rd, dict(dec) if dec else None)
+            dec = decisions.get(rd["marquage"])
+            drow = DECARow(rd, dec)
             self._rows.append(drow)
             self._insert_row(drow)
+
+        self.setSortingEnabled(True)
 
     def _insert_row(self, drow: DECARow):
         r = self.rowCount()
@@ -124,21 +423,22 @@ class DECATable(QTableWidget):
 
         bg = C_VALIDE if drow.statut == "VALIDÉ" else (C_LOCKED if drow.locked else C_EN_COURS)
 
-        self.setItem(r, COL_MARQ, _ro_item(drow.marquage, bg))
-        self.setItem(r, COL_REF,  _ro_item(drow.ref, bg))
-        self.setItem(r, COL_SVC3, _ro_item(drow.svc3_cur, bg))
-        self.setItem(r, COL_LOC,  _ro_item(drow.loc, bg))
-        self.setItem(r, COL_STAT, _ro_item(drow.statut, bg))
+        self.setItem(r, COL_MARQ,  _ro_item(drow.marquage, bg))
+        self.setItem(r, COL_REF,   _ro_item(drow.ref, bg))
+        self.setItem(r, COL_SVC3,  _ro_item(drow.svc3_cur, bg))
+        self.setItem(r, COL_LOC,   _ro_item(drow.loc, bg))
+        self.setItem(r, COL_ASSY,  _ro_item(drow.assy, bg))
+        self.setItem(r, COL_CPXTY, _ro_item(drow.complexity, bg))
+        self.setItem(r, COL_STAT,  _ro_item(drow.statut, bg))
 
         if drow.locked:
-            svc3_disp = svc3_label(drow.n_svc3_plain, drow.n_svc1) if drow.n_svc3_plain and drow.n_svc1 else drow.n_svc3_plain
-            svc4_disp = svc4_label(drow.n_svc4_plain, drow.n_svc1) if drow.n_svc4_plain and drow.n_svc1 else drow.n_svc4_plain
-            self.setItem(r, COL_NSVC3, _ro_item(svc3_disp, bg))
-            self.setItem(r, COL_NSVC4, _ro_item(svc4_disp, bg))
+            svc3_d = svc3_label(drow.n_svc3_plain, drow.n_svc1) if drow.n_svc3_plain and drow.n_svc1 else drow.n_svc3_plain
+            svc4_d = svc4_label(drow.n_svc4_plain, drow.n_svc1) if drow.n_svc4_plain and drow.n_svc1 else drow.n_svc4_plain
+            self.setItem(r, COL_NSVC3, _ro_item(svc3_d, bg))
+            self.setItem(r, COL_NSVC4, _ro_item(svc4_d, bg))
             self.setItem(r, COL_COMM,  _ro_item(drow.commentaire, bg))
             return
 
-        # N.Service 3 dropdown
         cb3 = QComboBox()
         cb3.addItems(self._svc3_opts)
         if drow.n_svc3_plain and drow.n_svc1:
@@ -147,11 +447,9 @@ class DECATable(QTableWidget):
             if idx >= 0:
                 cb3.setCurrentIndex(idx)
 
-        # N.Service 4 dropdown (filtré par svc3)
         cb4 = QComboBox()
         self._fill_svc4(cb4, drow.n_svc1, drow.n_svc3_plain, drow.n_svc4_plain)
 
-        # Commentaire
         ed = QLineEdit(drow.commentaire)
         ed.setFrame(False)
         ed.setStyleSheet("padding: 2px 4px;")
@@ -160,9 +458,7 @@ class DECATable(QTableWidget):
         drow.combo_svc4 = cb4
         drow.edit_comm  = ed
 
-        cb3.currentTextChanged.connect(
-            lambda txt, d=drow: self._on_svc3_change(txt, d)
-        )
+        cb3.currentTextChanged.connect(lambda txt, d=drow: self._on_svc3_change(txt, d))
 
         self.setCellWidget(r, COL_NSVC3, cb3)
         self.setCellWidget(r, COL_NSVC4, cb4)
@@ -209,6 +505,14 @@ class DECATable(QTableWidget):
             })
         return result
 
+    def open_detail_for_selected(self):
+        rows = self.selectionModel().selectedRows()
+        if not rows:
+            return
+        row = rows[0].row()
+        if row < len(self._rows):
+            self._open_detail(self._rows[row].marquage)
+
 
 # ── Fenêtre principale ────────────────────────────────────────────────────────
 
@@ -239,8 +543,7 @@ class MainWindow(QMainWindow):
         top.addWidget(self.cb_module)
         top.addSpacing(20)
         self.lbl_stats = QLabel("")
-        font_b = QFont()
-        font_b.setBold(True)
+        font_b = QFont(); font_b.setBold(True)
         self.lbl_stats.setFont(font_b)
         top.addWidget(self.lbl_stats)
         top.addStretch()
@@ -253,43 +556,57 @@ class MainWindow(QMainWindow):
         # ── Splitter ──────────────────────────────────────────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Panneau gauche — liste PN
+        # Panneau gauche
         left = QWidget()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 6, 0)
         ll.addWidget(QLabel("<b>PNs du module</b>"))
-
         self.search_pn = QLineEdit()
-        self.search_pn.setPlaceholderText("🔍 Rechercher…")
+        self.search_pn.setPlaceholderText("🔍 Rechercher un PN…")
         self.search_pn.textChanged.connect(self._filter_list)
         ll.addWidget(self.search_pn)
-
         self.cb_filter = QComboBox()
         self.cb_filter.addItems(["Tous", "À traiter", "Traités"])
         self.cb_filter.currentTextChanged.connect(self._filter_list)
         ll.addWidget(self.cb_filter)
-
         self.pn_list = QListWidget()
         self.pn_list.currentItemChanged.connect(self._on_pn_selected)
         ll.addWidget(self.pn_list)
 
-        # Panneau droit — table DECA
+        # Panneau droit
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(6, 0, 0, 0)
 
+        # En-tête PN
+        hdr = QHBoxLayout()
         self.lbl_pn = QLabel("← Sélectionne un PN")
-        font_h = QFont()
-        font_h.setBold(True)
-        font_h.setPointSize(11)
+        font_h = QFont(); font_h.setBold(True); font_h.setPointSize(11)
         self.lbl_pn.setFont(font_h)
-        rl.addWidget(self.lbl_pn)
+        hdr.addWidget(self.lbl_pn, stretch=1)
+        rl.addLayout(hdr)
 
+        # Filtre lignes
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filtrer les lignes :"))
+        self.filter_table = QLineEdit()
+        self.filter_table.setPlaceholderText("Texte dans n'importe quelle colonne…")
+        self.filter_table.textChanged.connect(self._filter_table_rows)
+        filter_row.addWidget(self.filter_table)
+        filter_row.addWidget(QLabel("(clic droit sur l'en-tête → cacher/afficher colonnes)"))
+        rl.addLayout(filter_row)
+
+        # Table
         self.table = DECATable()
         rl.addWidget(self.table)
 
         # Boutons action
         btn_row = QHBoxLayout()
+        self.btn_fiche = QPushButton("📋  Fiche outil")
+        self.btn_fiche.setFixedHeight(36)
+        self.btn_fiche.clicked.connect(self.table.open_detail_for_selected)
+        btn_row.addWidget(self.btn_fiche)
+
         self.btn_valider = QPushButton("✓  Valider & suivant")
         self.btn_valider.setFixedHeight(36)
         self.btn_valider.setStyleSheet(
@@ -310,7 +627,6 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right)
         splitter.setSizes([240, 1160])
         root.addWidget(splitter)
-
         self.setStatusBar(QStatusBar())
 
     # ── Chargement module ─────────────────────────────────────────────────────
@@ -352,14 +668,37 @@ class MainWindow(QMainWindow):
         search = self.search_pn.text().upper()
         status = self.cb_filter.currentText()
         for item in self._pn_items:
-            data  = item.data(Qt.ItemDataRole.UserRole)
-            done  = data["done"]
+            data = item.data(Qt.ItemDataRole.UserRole)
+            done = data["done"]
             match = (not search) or (search in data["pn"].upper())
             if status == "À traiter" and done:
                 match = False
             if status == "Traités" and not done:
                 match = False
             item.setHidden(not match)
+
+    def _filter_table_rows(self, text: str):
+        text = text.lower()
+        for row in range(self.table.rowCount()):
+            visible = False
+            if not text:
+                visible = True
+            else:
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    if item and text in item.text().lower():
+                        visible = True
+                        break
+                    widget = self.table.cellWidget(row, col)
+                    if widget and isinstance(widget, QComboBox):
+                        if text in widget.currentText().lower():
+                            visible = True
+                            break
+                    if widget and isinstance(widget, QLineEdit):
+                        if text in widget.text().lower():
+                            visible = True
+                            break
+            self.table.setRowHidden(row, not visible)
 
     def _update_stats(self):
         total = len(self._pn_items)
@@ -374,6 +713,7 @@ class MainWindow(QMainWindow):
         pn = item.data(Qt.ItemDataRole.UserRole)["pn"]
         self._current_pn = pn
         self.lbl_pn.setText(f"PN :  {pn}")
+        self.filter_table.clear()
         self.table.load_pn(pn, self._module)
 
     def _next_pn(self):
@@ -402,12 +742,11 @@ class MainWindow(QMainWindow):
             self._next_pn()
             return
 
-        # Vérification N.Service3 obligatoire
         missing = [f["marquage"] for f in forms if not f["svc3"]]
         if missing:
             QMessageBox.warning(
                 self, "N.Service 3 manquant",
-                f"N.Service 3 obligatoire pour :\n" + "\n".join(missing)
+                "N.Service 3 obligatoire pour :\n" + "\n".join(missing)
             )
             return
 
@@ -429,7 +768,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"✓  {len(forms)} DECA(s) validé(s) pour {self._current_pn}.", 4000
         )
-        # Rafraîchir liste et passer au suivant
         self._reload_pn_list()
         self._update_stats()
         self._next_pn()
@@ -458,7 +796,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    # Force palette claire (indépendant du mode sombre Windows)
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window,          QColor("#f5f5f5"))
     palette.setColor(QPalette.ColorRole.WindowText,      QColor("#000000"))
