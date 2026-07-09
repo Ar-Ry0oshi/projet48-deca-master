@@ -163,7 +163,9 @@ def _render_nav_view(module: str):
 
     col_prev, col_sel, col_ctr, col_badge, col_next = st.columns([0.5, 3, 0.8, 1.5, 0.5])
     if col_prev.button("◄", key="reu_prev", use_container_width=True):
-        st.session_state["reunion_pn_idx"] = max(0, idx - 1)
+        new_idx = max(0, idx - 1)
+        st.session_state["reunion_pn_idx"] = new_idx
+        st.session_state["reu_pn_select"] = pns[new_idx]
         st.rerun()
 
     sel_pn = col_sel.selectbox(
@@ -176,7 +178,9 @@ def _render_nav_view(module: str):
     col_ctr.caption(f"{idx + 1} / {len(pns)}")
     _pn_status_badge(pn, module, col_badge)
     if col_next.button("►", key="reu_next", use_container_width=True):
-        st.session_state["reunion_pn_idx"] = min(len(pns) - 1, idx + 1)
+        new_idx = min(len(pns) - 1, idx + 1)
+        st.session_state["reunion_pn_idx"] = new_idx
+        st.session_state["reu_pn_select"] = pns[new_idx]
         st.rerun()
 
     active_df, excluded_df = _load_deca_rows(pn, module)
