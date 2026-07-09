@@ -1,0 +1,462 @@
+"""
+DECA Manager — attribution des services, mode utilisateur.
+PyQt6 — tableau Excel-like par PN, saisie directe → VALIDÉ, export XLSX.
+Partage decisions.db avec le dashboard Streamlit (lecture seule côté Streamlit).
+"""
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).parent
+sys.path.insert(0, str(ROOT))
+
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+    QSplitter, QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem,
+    QComboBox, QLabel, QPushButton, QLineEdit, QHeaderView,
+    QMessageBox, QFileDialog, QAbstractItemView, QStatusBar,
+)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont
+
+import pandas as pd
+
+from config import MODULES
+from db import queries
+from services import (
+    svc3_labeled_options, svc3_from_label, svc3_label,
+    svc4_labeled_for_bld, svc4_from_label, svc4_label,
+    svc2_for_svc3,
+)
+
+# ── Couleurs ──────────────────────────────────────────────────────────────────
+C_VALIDE   = "#d4edda"
+C_EN_COURS = "#ffffff"
+C_LOCKED   = "#f0f0f0"
+C_HEADER   = "#dce6f1"
+
+# ── Index colonnes ────────────────────────────────────────────────────────────
+COL_MARQ  = 0
+COL_REF   = 1
+COL_SVC3  = 2
+COL_LOC   = 3
+COL_NSVC3 = 4
+COL_NSVC4 = 5
+COL_COMM  = 6
+COL_STAT  = 7
+
+HEADERS = [
+    "Marquage", "Réf constructeur", "Service 3 actuel",
+    "Localisation", "N.Service 3", "N.Service 4", "Commentaire", "Statut",
+]
+
+
+def _ro_item(text: str, bg: str) -> QTableWidgetItem:
+    item = QTableWidgetItem(str(text) if text else "")
+    item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+    item.setBackground(QColor(bg))
+    return item
+
+
+# ── Ligne DECA ────────────────────────────────────────────────────────────────
+
+class DECARow:
+    def __init__(self, row_data: dict, dec: dict | None):
+        self.marquage   = row_data["marquage"]
+        self.pn_short   = row_data["pn_short"]
+        self.ref        = row_data.get("ref_constructeur") or ""
+        self.svc3_cur   = row_data.get("service3") or ""
+        self.loc        = row_data.get("localisation3") or ""
+        self.locked     = bool(dec and dec.get("decision") in ("VALIDÉ", "EN ATTENTE"))
+        self.statut     = (dec or {}).get("decision") or "EN COURS"
+
+        self.n_svc3_plain = (dec or {}).get("n_service3") or ""
+        self.n_svc4_plain = (dec or {}).get("n_service4") or ""
+        self.n_svc1       = (dec or {}).get("n_service1") or ""
+        self.commentaire  = (dec or {}).get("commentaire") or ""
+
+        self.combo_svc3: QComboBox | None = None
+        self.combo_svc4: QComboBox | None = None
+        self.edit_comm:  QLineEdit | None = None
+
+
+# ── Table DECA ────────────────────────────────────────────────────────────────
+
+class DECATable(QTableWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._svc3_opts = svc3_labeled_options()
+        self._rows: list[DECARow] = []
+
+        self.setColumnCount(len(HEADERS))
+        self.setHorizontalHeaderLabels(HEADERS)
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.verticalHeader().setVisible(False)
+        self.setShowGrid(True)
+        self.setAlternatingRowColors(False)
+
+        for col, w in enumerate([110, 140, 150, 120, 210, 210, 160, 80]):
+            self.setColumnWidth(col, w)
+
+        # Style header
+        self.horizontalHeader().setStyleSheet(
+            "QHeaderView::section { background:#dce6f1; font-weight:bold; padding:4px; border:1px solid #bbb; }"
+        )
+
+    def load_pn(self, pn: str, module: str):
+        self._rows.clear()
+        self.setRowCount(0)
+
+        all_tools = queries.get_tools_for_module(module)
+        active = [dict(r) for r in all_tools if r["pn_short"] == pn and not r["is_excluded"]]
+
+        for rd in active:
+            dec = queries.get_decision(rd["marquage"])
+            drow = DECARow(rd, dict(dec) if dec else None)
+            self._rows.append(drow)
+            self._insert_row(drow)
+
+    def _insert_row(self, drow: DECARow):
+        r = self.rowCount()
+        self.insertRow(r)
+        self.setRowHeight(r, 34)
+
+        bg = C_VALIDE if drow.statut == "VALIDÉ" else (C_LOCKED if drow.locked else C_EN_COURS)
+
+        self.setItem(r, COL_MARQ, _ro_item(drow.marquage, bg))
+        self.setItem(r, COL_REF,  _ro_item(drow.ref, bg))
+        self.setItem(r, COL_SVC3, _ro_item(drow.svc3_cur, bg))
+        self.setItem(r, COL_LOC,  _ro_item(drow.loc, bg))
+        self.setItem(r, COL_STAT, _ro_item(drow.statut, bg))
+
+        if drow.locked:
+            svc3_disp = svc3_label(drow.n_svc3_plain, drow.n_svc1) if drow.n_svc3_plain and drow.n_svc1 else drow.n_svc3_plain
+            svc4_disp = svc4_label(drow.n_svc4_plain, drow.n_svc1) if drow.n_svc4_plain and drow.n_svc1 else drow.n_svc4_plain
+            self.setItem(r, COL_NSVC3, _ro_item(svc3_disp, bg))
+            self.setItem(r, COL_NSVC4, _ro_item(svc4_disp, bg))
+            self.setItem(r, COL_COMM,  _ro_item(drow.commentaire, bg))
+            return
+
+        # N.Service 3 dropdown
+        cb3 = QComboBox()
+        cb3.addItems(self._svc3_opts)
+        if drow.n_svc3_plain and drow.n_svc1:
+            lbl = svc3_label(drow.n_svc3_plain, drow.n_svc1)
+            idx = cb3.findText(lbl)
+            if idx >= 0:
+                cb3.setCurrentIndex(idx)
+
+        # N.Service 4 dropdown (filtré par svc3)
+        cb4 = QComboBox()
+        self._fill_svc4(cb4, drow.n_svc1, drow.n_svc3_plain, drow.n_svc4_plain)
+
+        # Commentaire
+        ed = QLineEdit(drow.commentaire)
+        ed.setFrame(False)
+        ed.setStyleSheet("padding: 2px 4px;")
+
+        drow.combo_svc3 = cb3
+        drow.combo_svc4 = cb4
+        drow.edit_comm  = ed
+
+        cb3.currentTextChanged.connect(
+            lambda txt, d=drow: self._on_svc3_change(txt, d)
+        )
+
+        self.setCellWidget(r, COL_NSVC3, cb3)
+        self.setCellWidget(r, COL_NSVC4, cb4)
+        self.setCellWidget(r, COL_COMM,  ed)
+
+    def _on_svc3_change(self, label: str, drow: DECARow):
+        svc3_plain, svc1 = svc3_from_label(label)
+        drow.n_svc3_plain = svc3_plain
+        drow.n_svc1 = svc1
+        self._fill_svc4(drow.combo_svc4, svc1, svc3_plain, "")
+
+    def _fill_svc4(self, cb4: QComboBox | None, svc1: str, svc3: str, current: str):
+        if cb4 is None:
+            return
+        cb4.blockSignals(True)
+        cb4.clear()
+        opts = svc4_labeled_for_bld(svc1, svc3) if svc1 else [""]
+        cb4.addItems(opts)
+        if current and svc1:
+            lbl = svc4_label(current, svc1)
+            idx = cb4.findText(lbl)
+            if idx >= 0:
+                cb4.setCurrentIndex(idx)
+        cb4.blockSignals(False)
+
+    def get_form_data(self) -> list[dict]:
+        result = []
+        for drow in self._rows:
+            if drow.locked:
+                continue
+            svc3_lbl = drow.combo_svc3.currentText() if drow.combo_svc3 else ""
+            svc3_plain, svc1 = svc3_from_label(svc3_lbl)
+            svc4_lbl = drow.combo_svc4.currentText() if drow.combo_svc4 else ""
+            svc4_plain = svc4_from_label(svc4_lbl)
+            svc2s = svc2_for_svc3(svc3_plain) if svc3_plain else []
+            result.append({
+                "marquage":    drow.marquage,
+                "pn_short":    drow.pn_short,
+                "svc3":        svc3_plain,
+                "svc1":        svc1,
+                "svc2":        svc2s[0] if svc2s else "",
+                "svc4":        svc4_plain,
+                "commentaire": drow.edit_comm.text() if drow.edit_comm else "",
+            })
+        return result
+
+
+# ── Fenêtre principale ────────────────────────────────────────────────────────
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("DECA Manager — Attribution des services")
+        self.resize(1400, 760)
+        self._module = MODULES[0]
+        self._current_pn: str | None = None
+        self._pn_items: list[QListWidgetItem] = []
+        self._setup_ui()
+        self._load_module(self._module)
+
+    def _setup_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(6)
+
+        # ── Barre supérieure ──────────────────────────────────────────────
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Module :"))
+        self.cb_module = QComboBox()
+        self.cb_module.addItems(MODULES)
+        self.cb_module.currentTextChanged.connect(self._load_module)
+        top.addWidget(self.cb_module)
+        top.addSpacing(20)
+        self.lbl_stats = QLabel("")
+        font_b = QFont()
+        font_b.setBold(True)
+        self.lbl_stats.setFont(font_b)
+        top.addWidget(self.lbl_stats)
+        top.addStretch()
+        btn_export = QPushButton("📥  Exporter XLSX")
+        btn_export.setFixedHeight(32)
+        btn_export.clicked.connect(self._export)
+        top.addWidget(btn_export)
+        root.addLayout(top)
+
+        # ── Splitter ──────────────────────────────────────────────────────
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Panneau gauche — liste PN
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 6, 0)
+        ll.addWidget(QLabel("<b>PNs du module</b>"))
+
+        self.search_pn = QLineEdit()
+        self.search_pn.setPlaceholderText("🔍 Rechercher…")
+        self.search_pn.textChanged.connect(self._filter_list)
+        ll.addWidget(self.search_pn)
+
+        self.cb_filter = QComboBox()
+        self.cb_filter.addItems(["Tous", "À traiter", "Traités"])
+        self.cb_filter.currentTextChanged.connect(self._filter_list)
+        ll.addWidget(self.cb_filter)
+
+        self.pn_list = QListWidget()
+        self.pn_list.currentItemChanged.connect(self._on_pn_selected)
+        ll.addWidget(self.pn_list)
+
+        # Panneau droit — table DECA
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(6, 0, 0, 0)
+
+        self.lbl_pn = QLabel("← Sélectionne un PN")
+        font_h = QFont()
+        font_h.setBold(True)
+        font_h.setPointSize(11)
+        self.lbl_pn.setFont(font_h)
+        rl.addWidget(self.lbl_pn)
+
+        self.table = DECATable()
+        rl.addWidget(self.table)
+
+        # Boutons action
+        btn_row = QHBoxLayout()
+        self.btn_valider = QPushButton("✓  Valider & suivant")
+        self.btn_valider.setFixedHeight(36)
+        self.btn_valider.setStyleSheet(
+            "QPushButton { background:#21c354; color:white; font-weight:bold; border-radius:4px; }"
+            "QPushButton:hover { background:#1aad47; }"
+        )
+        self.btn_valider.clicked.connect(self._valider)
+        btn_row.addWidget(self.btn_valider)
+
+        self.btn_next = QPushButton("PN suivant  →")
+        self.btn_next.setFixedHeight(36)
+        self.btn_next.clicked.connect(self._next_pn)
+        btn_row.addWidget(self.btn_next)
+        btn_row.addStretch()
+        rl.addLayout(btn_row)
+
+        splitter.addWidget(left)
+        splitter.addWidget(right)
+        splitter.setSizes([240, 1160])
+        root.addWidget(splitter)
+
+        self.setStatusBar(QStatusBar())
+
+    # ── Chargement module ─────────────────────────────────────────────────────
+
+    def _load_module(self, module: str):
+        self._module = module
+        self._current_pn = None
+        self.lbl_pn.setText("← Sélectionne un PN")
+        self.table.setRowCount(0)
+        self._reload_pn_list()
+        self._update_stats()
+
+    def _reload_pn_list(self):
+        self.pn_list.clear()
+        self._pn_items.clear()
+
+        pns = queries.get_pn_list_for_module(self._module)
+        all_tools = queries.get_tools_for_module(self._module)
+        # Pré-charger toutes les décisions du module
+        marquages_by_pn: dict[str, list[str]] = {}
+        for r in all_tools:
+            marquages_by_pn.setdefault(r["pn_short"], []).append(r["marquage"])
+
+        for pn in pns:
+            mqs = marquages_by_pn.get(pn, [])
+            decs = [queries.get_decision(m) for m in mqs]
+            statuses = [d["decision"] for d in decs if d]
+            done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+
+            item = QListWidgetItem(f"{'✓  ' if done else '   '}{pn}")
+            item.setData(Qt.ItemDataRole.UserRole, {"pn": pn, "done": done})
+            item.setBackground(QColor(C_VALIDE if done else C_EN_COURS))
+            self.pn_list.addItem(item)
+            self._pn_items.append(item)
+
+        self._filter_list()
+
+    def _filter_list(self):
+        search = self.search_pn.text().upper()
+        status = self.cb_filter.currentText()
+        for item in self._pn_items:
+            data  = item.data(Qt.ItemDataRole.UserRole)
+            done  = data["done"]
+            match = (not search) or (search in data["pn"].upper())
+            if status == "À traiter" and done:
+                match = False
+            if status == "Traités" and not done:
+                match = False
+            item.setHidden(not match)
+
+    def _update_stats(self):
+        total = len(self._pn_items)
+        done  = sum(1 for it in self._pn_items if it.data(Qt.ItemDataRole.UserRole)["done"])
+        self.lbl_stats.setText(f"{done} / {total} PNs traités")
+
+    # ── Navigation PN ─────────────────────────────────────────────────────────
+
+    def _on_pn_selected(self, item: QListWidgetItem, _):
+        if not item:
+            return
+        pn = item.data(Qt.ItemDataRole.UserRole)["pn"]
+        self._current_pn = pn
+        self.lbl_pn.setText(f"PN :  {pn}")
+        self.table.load_pn(pn, self._module)
+
+    def _next_pn(self):
+        for i in range(self.pn_list.count()):
+            it = self.pn_list.item(i)
+            if it.isHidden():
+                continue
+            if it.data(Qt.ItemDataRole.UserRole)["pn"] == self._current_pn:
+                for j in range(i + 1, self.pn_list.count()):
+                    nxt = self.pn_list.item(j)
+                    if not nxt.isHidden():
+                        self.pn_list.setCurrentItem(nxt)
+                        return
+                break
+
+    # ── Validation ────────────────────────────────────────────────────────────
+
+    def _valider(self):
+        if not self._current_pn:
+            QMessageBox.warning(self, "Aucun PN", "Sélectionne d'abord un PN.")
+            return
+
+        forms = self.table.get_form_data()
+        if not forms:
+            QMessageBox.information(self, "Déjà validé", "Toutes les lignes sont déjà validées.")
+            self._next_pn()
+            return
+
+        # Vérification N.Service3 obligatoire
+        missing = [f["marquage"] for f in forms if not f["svc3"]]
+        if missing:
+            QMessageBox.warning(
+                self, "N.Service 3 manquant",
+                f"N.Service 3 obligatoire pour :\n" + "\n".join(missing)
+            )
+            return
+
+        for f in forms:
+            queries.upsert_decision(
+                marquage       = f["marquage"],
+                pn_short       = f["pn_short"],
+                module_context = self._module,
+                n_service1     = f["svc1"] or None,
+                n_service2     = f["svc2"] or None,
+                n_service3     = f["svc3"] or None,
+                n_service4     = f["svc4"] or None,
+                pre_check      = None,
+                decision       = "VALIDÉ",
+                commentaire    = f["commentaire"] or None,
+                updated_by     = "manager_user",
+            )
+
+        self.statusBar().showMessage(
+            f"✓  {len(forms)} DECA(s) validé(s) pour {self._current_pn}.", 4000
+        )
+        # Rafraîchir liste et passer au suivant
+        self._reload_pn_list()
+        self._update_stats()
+        self._next_pn()
+
+    # ── Export ────────────────────────────────────────────────────────────────
+
+    def _export(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exporter les décisions VALIDÉ",
+            f"export_{self._module}.xlsx", "Excel (*.xlsx)"
+        )
+        if not path:
+            return
+        rows = queries.get_decisions_for_export(self._module)
+        if not rows:
+            QMessageBox.information(self, "Export vide", "Aucune décision VALIDÉ pour ce module.")
+            return
+        df = pd.DataFrame([dict(r) for r in rows])
+        df.to_excel(path, index=False)
+        self.statusBar().showMessage(f"Export réussi → {path}", 5000)
+
+
+# ── Entrée ────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    win = MainWindow()
+    win.show()
+    sys.exit(app.exec())
