@@ -116,9 +116,33 @@ def _forms_complete(forms: list[dict], mode: str) -> tuple[bool, str]:
 # ── Vue navigation PN ─────────────────────────────────────────────────────────
 
 def _render_nav_view(module: str, mode: str):
+    all_tools = db_cached.get_tools_for_module(module)
+
+    # ── Filtres PN ────────────────────────────────────────────────────────────
+    all_svc3  = sorted({r["service3"] for r in all_tools if r.get("service3")})
+    all_loc3  = sorted({r["localisation3"] for r in all_tools if r.get("localisation3")})
+    with st.expander("🔍 Filtrer les PNs", expanded=False):
+        nf1, nf2 = st.columns(2)
+        f_svc3 = nf1.multiselect("Service 3 actuel", all_svc3, key=f"nav_f_svc3_{mode}", placeholder="Tous")
+        f_loc3 = nf2.multiselect("Localisation 3", all_loc3, key=f"nav_f_loc3_{mode}", placeholder="Tous")
+
+    pn_to_rows: dict[str, list] = {}
+    for r in all_tools:
+        pn_to_rows.setdefault(r["pn_short"], []).append(r)
+
     pns = queries.get_pn_list_for_module(module)
+    if f_svc3 or f_loc3:
+        def _pn_matches(pn):
+            rows = pn_to_rows.get(pn, [])
+            if f_svc3 and not any(r.get("service3") in f_svc3 for r in rows):
+                return False
+            if f_loc3 and not any(r.get("localisation3") in f_loc3 for r in rows):
+                return False
+            return True
+        pns = [p for p in pns if _pn_matches(p)]
+
     if not pns:
-        st.info(f"Aucun PN actif sur {module}.")
+        st.info("Aucun PN ne correspond aux filtres.")
         return
 
     if st.session_state.get("precheck_pn") in pns:
