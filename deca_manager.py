@@ -348,7 +348,6 @@ class ColumnFilterBar(QWidget):
         layout.addStretch(0)
 
         table.horizontalHeader().sectionResized.connect(self._sync)
-        table.horizontalHeader().sectionHidden.connect(self._sync)
 
     def _sync(self, *_):
         for col, le in enumerate(self._filters):
