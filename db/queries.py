@@ -197,6 +197,16 @@ def reset_decision(marquage: str, reset_by: str = "user") -> bool:
     return True
 
 
+def get_decisions_batch_for_module(module: str) -> dict:
+    """Retourne {marquage: dict(decision)} en une seule requête — évite N+1."""
+    rows = db.fetchall("""
+        SELECT d.* FROM decisions d
+        JOIN tools t ON t.marquage = d.marquage
+        WHERE t.modules_effective LIKE ? AND t.is_excluded = 0
+    """, (f"%{module}%",))
+    return {r["marquage"]: dict(r) for r in rows}
+
+
 def get_decisions_for_export(module: str | None = None) -> list:
     if module:
         return db.fetchall("""

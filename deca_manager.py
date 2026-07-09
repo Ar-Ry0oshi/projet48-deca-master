@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFileDialog, QAbstractItemView, QStatusBar,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtGui import QColor, QFont, QPalette
 
 import pandas as pd
 
@@ -329,15 +329,15 @@ class MainWindow(QMainWindow):
 
         pns = queries.get_pn_list_for_module(self._module)
         all_tools = queries.get_tools_for_module(self._module)
-        # Pré-charger toutes les décisions du module
+        decisions = queries.get_decisions_batch_for_module(self._module)
+
         marquages_by_pn: dict[str, list[str]] = {}
         for r in all_tools:
             marquages_by_pn.setdefault(r["pn_short"], []).append(r["marquage"])
 
         for pn in pns:
             mqs = marquages_by_pn.get(pn, [])
-            decs = [queries.get_decision(m) for m in mqs]
-            statuses = [d["decision"] for d in decs if d]
+            statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
             done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
 
             item = QListWidgetItem(f"{'✓  ' if done else '   '}{pn}")
@@ -457,6 +457,22 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+
+    # Force palette claire (indépendant du mode sombre Windows)
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Window,          QColor("#f5f5f5"))
+    palette.setColor(QPalette.ColorRole.WindowText,      QColor("#000000"))
+    palette.setColor(QPalette.ColorRole.Base,            QColor("#ffffff"))
+    palette.setColor(QPalette.ColorRole.AlternateBase,   QColor("#f0f0f0"))
+    palette.setColor(QPalette.ColorRole.Text,            QColor("#000000"))
+    palette.setColor(QPalette.ColorRole.Button,          QColor("#e0e0e0"))
+    palette.setColor(QPalette.ColorRole.ButtonText,      QColor("#000000"))
+    palette.setColor(QPalette.ColorRole.Highlight,       QColor("#0078d4"))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    palette.setColor(QPalette.ColorRole.ToolTipBase,     QColor("#ffffff"))
+    palette.setColor(QPalette.ColorRole.ToolTipText,     QColor("#000000"))
+    app.setPalette(palette)
+
     win = MainWindow()
     win.show()
     sys.exit(app.exec())
