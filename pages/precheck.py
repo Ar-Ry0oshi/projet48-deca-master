@@ -129,11 +129,18 @@ def _render_nav_view(module: str, mode: str):
     pn  = pns[idx]
 
     # ── Barre de navigation ───────────────────────────────────────────────────
-    col_prev, col_pn, col_ctr, col_badge, col_next = st.columns([0.5, 2, 1, 1.5, 0.5])
+    col_prev, col_sel, col_ctr, col_badge, col_next = st.columns([0.5, 3, 0.8, 1.5, 0.5])
     if col_prev.button("◄", key="nav_prev", use_container_width=True):
         st.session_state["precheck_pn_idx"] = max(0, idx - 1)
         st.rerun()
-    col_pn.markdown(f"### `{pn}`")
+
+    sel_pn = col_sel.selectbox(
+        "PN", pns, index=idx, key="pc_pn_select", label_visibility="collapsed"
+    )
+    if sel_pn != pn:
+        st.session_state["precheck_pn_idx"] = pns.index(sel_pn)
+        st.rerun()
+
     col_ctr.caption(f"{idx + 1} / {len(pns)}")
 
     # Badge statut

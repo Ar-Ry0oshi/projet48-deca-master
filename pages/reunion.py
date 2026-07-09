@@ -137,11 +137,18 @@ def _render_nav_view(module: str):
     idx = max(0, min(st.session_state["reunion_pn_idx"], len(pns) - 1))
     pn  = pns[idx]
 
-    col_prev, col_pn, col_ctr, col_badge, col_next = st.columns([0.5, 2, 1, 1.5, 0.5])
+    col_prev, col_sel, col_ctr, col_badge, col_next = st.columns([0.5, 3, 0.8, 1.5, 0.5])
     if col_prev.button("◄", key="reu_prev", use_container_width=True):
         st.session_state["reunion_pn_idx"] = max(0, idx - 1)
         st.rerun()
-    col_pn.markdown(f"### `{pn}`")
+
+    sel_pn = col_sel.selectbox(
+        "PN", pns, index=idx, key="reu_pn_select", label_visibility="collapsed"
+    )
+    if sel_pn != pn:
+        st.session_state["reunion_pn_idx"] = pns.index(sel_pn)
+        st.rerun()
+
     col_ctr.caption(f"{idx + 1} / {len(pns)}")
     _pn_status_badge(pn, module, col_badge)
     if col_next.button("►", key="reu_next", use_container_width=True):
