@@ -17,8 +17,9 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFileDialog, QAbstractItemView, QStatusBar,
     QDialog, QGridLayout, QScrollArea, QMenu, QFrame, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QSortFilterProxyModel
+from PyQt6.QtCore import Qt, QThread
 from PyQt6.QtGui import QColor, QFont, QPalette, QPixmap, QAction
+from PyQt6.QtWidgets import QCompleter
 
 import pandas as pd
 
@@ -322,6 +323,13 @@ class DECADetailDialog(QDialog):
             self._load(self._marquages[self._idx])
 
 
+# ── Pré-chargement photos en arrière-plan ────────────────────────────────────
+
+class _PhotoPreloader(QThread):
+    def run(self):
+        _photo_index()  # chauffe le lru_cache sans bloquer l'UI
+
+
 # ── Barre de filtres par colonne ─────────────────────────────────────────────
 
 class ColumnFilterBar(QWidget):
@@ -506,15 +514,14 @@ class DECATable(QTableWidget):
             self.setItem(r, COL_COMM,  _ro_item(drow.commentaire, bg))
             return
 
-        cb3 = QComboBox()
-        cb3.addItems(self._svc3_opts)
+        cb3 = self._make_combo(self._svc3_opts)
         if drow.n_svc3_plain and drow.n_svc1:
             lbl = svc3_label(drow.n_svc3_plain, drow.n_svc1)
             idx = cb3.findText(lbl)
             if idx >= 0:
                 cb3.setCurrentIndex(idx)
 
-        cb4 = QComboBox()
+        cb4 = self._make_combo([])
         self._fill_svc4(cb4, drow.n_svc1, drow.n_svc3_plain, drow.n_svc4_plain)
 
         ed = QLineEdit(drow.commentaire)
@@ -531,6 +538,18 @@ class DECATable(QTableWidget):
         self.setCellWidget(r, COL_NSVC4, cb4)
         self.setCellWidget(r, COL_COMM,  ed)
 
+    @staticmethod
+    def _make_combo(items: list[str]) -> QComboBox:
+        cb = QComboBox()
+        cb.setEditable(True)
+        cb.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        cb.addItems(items)
+        completer = QCompleter(items)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        cb.setCompleter(completer)
+        return cb
+
     def _on_svc3_change(self, label: str, drow: DECARow):
         svc3_plain, svc1 = svc3_from_label(label)
         drow.n_svc3_plain = svc3_plain
@@ -544,6 +563,10 @@ class DECATable(QTableWidget):
         cb4.clear()
         opts = svc4_labeled_for_bld(svc1, svc3) if svc1 else [""]
         cb4.addItems(opts)
+        completer = QCompleter(opts)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        cb4.setCompleter(completer)
         if current and svc1:
             lbl = svc4_label(current, svc1)
             idx = cb4.findText(lbl)
@@ -593,6 +616,9 @@ class MainWindow(QMainWindow):
         self._pn_items: list[QListWidgetItem] = []
         self._setup_ui()
         self._load_module(self._module)
+        # Pré-charger l'index photos en arrière-plan
+        self._preloader = _PhotoPreloader()
+        self._preloader.start()
 
     def _setup_ui(self):
         central = QWidget()
