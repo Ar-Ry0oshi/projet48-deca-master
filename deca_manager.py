@@ -40,20 +40,30 @@ C_LOCKED   = "#f0f0f0"
 COL_MARQ  = 0
 COL_REF   = 1
 COL_SVC3  = 2
-COL_LOC   = 3
-COL_ASSY  = 4
-COL_CPXTY = 5
-COL_NSVC3 = 6
-COL_NSVC4 = 7
-COL_COMM  = 8
-COL_STAT  = 9
+COL_SVC1  = 3
+COL_SVC2  = 4
+COL_SVC4  = 5
+COL_SVC5  = 6
+COL_LOC1  = 7
+COL_LOC2  = 8
+COL_LOC3  = 9
+COL_LOC4  = 10
+COL_LOC5  = 11
+COL_ASSY  = 12
+COL_CPXTY = 13
+COL_NSVC3 = 14
+COL_NSVC4 = 15
+COL_COMM  = 16
+COL_STAT  = 17
 
 HEADERS = [
-    "Marquage", "Réf constructeur", "Service 3 actuel",
-    "Localisation", "Assemblage", "Complexité",
+    "Marquage", "Réf constructeur", "Svc 3 actuel",
+    "Svc 1", "Svc 2", "Svc 4", "Svc 5",
+    "Loc 1", "Loc 2", "Loc 3", "Loc 4", "Loc 5",
+    "Assemblage", "Complexité",
     "N.Service 3", "N.Service 4", "Commentaire", "Statut",
 ]
-COL_WIDTHS = [110, 150, 150, 120, 70, 100, 210, 210, 160, 80]
+COL_WIDTHS = [110, 140, 140, 110, 110, 110, 80, 90, 90, 90, 90, 80, 70, 100, 210, 210, 150, 80]
 
 
 def _ro_item(text: str, bg: str) -> QTableWidgetItem:
@@ -405,10 +415,11 @@ class DECARow:
         self.pn_short   = row_data["pn_short"]
         self.ref        = row_data.get("ref_constructeur") or ""
         self.svc3_cur   = row_data.get("service3") or ""
-        self.loc        = row_data.get("localisation3") or ""
+        self.svcs       = [row_data.get(f"service{i}") or "" for i in range(1, 6)]
+        self.locs       = [row_data.get(f"localisation{i}") or "" for i in range(1, 6)]
         self.assy       = row_data.get("assy_flag") or ""
         self.complexity = row_data.get("complexity_flag") or ""
-        self.locked     = bool(dec and dec.get("decision") in ("VALIDÉ", "EN ATTENTE"))
+        self.locked     = bool(dec and dec.get("decision") == "VALIDÉ")
         self.statut     = (dec or {}).get("decision") or "EN COURS"
         self.n_svc3_plain = (dec or {}).get("n_service3") or ""
         self.n_svc4_plain = (dec or {}).get("n_service4") or ""
@@ -501,7 +512,15 @@ class DECATable(QTableWidget):
         self.setItem(r, COL_MARQ,  _ro_item(drow.marquage, bg))
         self.setItem(r, COL_REF,   _ro_item(drow.ref, bg))
         self.setItem(r, COL_SVC3,  _ro_item(drow.svc3_cur, bg))
-        self.setItem(r, COL_LOC,   _ro_item(drow.loc, bg))
+        self.setItem(r, COL_SVC1,  _ro_item(drow.svcs[0], bg))
+        self.setItem(r, COL_SVC2,  _ro_item(drow.svcs[1], bg))
+        self.setItem(r, COL_SVC4,  _ro_item(drow.svcs[3], bg))
+        self.setItem(r, COL_SVC5,  _ro_item(drow.svcs[4], bg))
+        self.setItem(r, COL_LOC1,  _ro_item(drow.locs[0], bg))
+        self.setItem(r, COL_LOC2,  _ro_item(drow.locs[1], bg))
+        self.setItem(r, COL_LOC3,  _ro_item(drow.locs[2], bg))
+        self.setItem(r, COL_LOC4,  _ro_item(drow.locs[3], bg))
+        self.setItem(r, COL_LOC5,  _ro_item(drow.locs[4], bg))
         self.setItem(r, COL_ASSY,  _ro_item(drow.assy, bg))
         self.setItem(r, COL_CPXTY, _ro_item(drow.complexity, bg))
         self.setItem(r, COL_STAT,  _ro_item(drow.statut, bg))
@@ -818,6 +837,9 @@ class MainWindow(QMainWindow):
             return
 
         for f in forms:
+            existing = queries.get_decision(f["marquage"])
+            if existing and existing["decision"] == "EN ATTENTE":
+                queries.reset_decision(f["marquage"], reset_by="manager_user")
             queries.upsert_decision(
                 marquage       = f["marquage"],
                 pn_short       = f["pn_short"],
