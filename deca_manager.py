@@ -748,6 +748,7 @@ class MainWindow(QMainWindow):
         top.addSpacing(20)
         self.btn_mode = QPushButton("Mode : Suggestion")
         self.btn_mode.setFixedHeight(32)
+        self.btn_mode.setFixedWidth(190)
         self.btn_mode.setCheckable(True)
         self.btn_mode.setStyleSheet(
             "QPushButton { border:2px solid #888; border-radius:4px; padding:0 10px; }"
