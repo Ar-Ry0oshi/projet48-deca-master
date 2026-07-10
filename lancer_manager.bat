@@ -1,12 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
 chcp 65001 >nul
-title DECA Manager — Lanceur
+title DECA Manager
 cd /d "%~dp0"
 
 echo.
 echo  ==========================================
-echo   DECA Manager — PSO Tooling SAESB
+echo   DECA Manager - PSO Tooling SAESB
 echo  ==========================================
 echo.
 
@@ -27,7 +27,7 @@ if not exist "!PYTHON!" (
 echo  Python : !PYTHON!
 echo.
 
-REM -- Verifie la version Python (>= 3.10 requis pour PyQt6) --
+REM -- Verifie la version Python --
 "!PYTHON!" -c "import sys; exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
 if errorlevel 1 (
     echo  [ERREUR] Python 3.10 minimum requis.
@@ -40,7 +40,7 @@ REM -- Installe / verifie les dependances --
 echo  Verification des dependances...
 "!PYTHON!" -c "import PyQt6, pandas, openpyxl" >nul 2>&1
 if errorlevel 1 (
-    echo  [INFO] Installation des dependances manquantes (peut prendre 1-2 min)...
+    echo  [INFO] Installation des dependances (peut prendre 1-2 min)...
     "!PYTHON!" -m pip install --quiet PyQt6 pandas openpyxl
     if errorlevel 1 (
         echo  [ERREUR] Echec de l'installation. Lance manuellement :
@@ -53,13 +53,12 @@ if errorlevel 1 (
 
 echo.
 echo  Demarrage de DECA Manager...
-"!PYTHON!" deca_manager.py > "%~dp0error_manager.log" 2>&1
+"!PYTHON!" deca_manager.py
 if errorlevel 1 (
     echo.
     echo  [ERREUR] DECA Manager s'est ferme avec une erreur.
-    echo  Detail dans : %~dp0error_manager.log
-    echo.
-    type "%~dp0error_manager.log"
+    echo  Relance depuis un terminal pour voir le detail :
+    echo  "!PYTHON!" deca_manager.py
     echo.
 )
 
