@@ -53,6 +53,14 @@ if errorlevel 1 (
 
 echo.
 echo  Demarrage de DECA Manager...
-"!PYTHON!" deca_manager.py
+"!PYTHON!" deca_manager.py 2> error_manager.log
+if errorlevel 1 (
+    echo.
+    echo  [ERREUR] DECA Manager s'est ferme avec une erreur.
+    echo  Detail dans : %~dp0error_manager.log
+    echo.
+    type error_manager.log
+    echo.
+)
 
 pause
