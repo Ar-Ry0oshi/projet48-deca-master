@@ -463,6 +463,37 @@ class DECATable(QTableWidget):
         # Double-clic → fiche
         self.doubleClicked.connect(self._on_double_click)
 
+        # Clic droit sur une ligne → menu contextuel
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._row_menu)
+
+    def _row_menu(self, pos):
+        index = self.indexAt(pos)
+        if not index.isValid() or index.row() >= len(self._rows):
+            return
+        drow = self._rows[index.row()]
+        if not drow.locked:
+            return
+        menu = QMenu(self)
+        act = menu.addAction("🔓  Déverrouiller cette ligne")
+        chosen = menu.exec(self.viewport().mapToGlobal(pos))
+        if chosen != act:
+            return
+        confirm = QMessageBox.question(
+            self, "Déverrouiller",
+            f"Déverrouiller  {drow.marquage}  ?\n\nLa décision VALIDÉ sera remise en EN COURS.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        queries.reset_decision(drow.marquage, reset_by="manager_user")
+        # Recharge le PN pour refléter le changement
+        parent = self.parent()
+        while parent and not isinstance(parent, MainWindow):
+            parent = parent.parent()
+        if parent:
+            parent._on_pn_selected(parent.pn_list.currentItem(), None)
+
     def _column_menu(self, pos):
         menu = QMenu(self)
         for col, header in enumerate(HEADERS):
