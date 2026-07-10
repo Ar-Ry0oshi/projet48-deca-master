@@ -207,6 +207,24 @@ def get_decisions_batch_for_module(module: str) -> dict:
     return {r["marquage"]: dict(r) for r in rows}
 
 
+def get_all_tools_for_export(module: str) -> list:
+    """Tous les DECAs du module (validés, en attente, sans décision) avec infos décision."""
+    return db.fetchall("""
+        SELECT
+            t.marquage, t.pn_short, t.ref_constructeur,
+            t.service1, t.service2, t.service3, t.service4, t.service5,
+            t.localisation1, t.localisation2, t.localisation3, t.localisation4,
+            t.assy_flag, t.complexity_flag, t.modules_effective,
+            d.decision, d.n_service1, d.n_service2, d.n_service3, d.n_service4,
+            d.pre_check, d.commentaire AS dec_commentaire,
+            d.updated_at, d.updated_by
+        FROM tools t
+        LEFT JOIN decisions d ON d.marquage = t.marquage
+        WHERE t.modules_effective LIKE ? AND t.is_excluded = 0
+        ORDER BY t.pn_short, t.marquage
+    """, (f"%{module}%",))
+
+
 def get_decisions_for_export(module: str | None = None) -> list:
     if module:
         return db.fetchall("""

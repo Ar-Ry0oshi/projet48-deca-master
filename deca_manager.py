@@ -659,10 +659,21 @@ class MainWindow(QMainWindow):
         self.lbl_stats.setFont(font_b)
         top.addWidget(self.lbl_stats)
         top.addStretch()
-        btn_export = QPushButton("📥  Exporter XLSX")
-        btn_export.setFixedHeight(32)
-        btn_export.clicked.connect(self._export)
-        top.addWidget(btn_export)
+        btn_export_full = QPushButton("📋  Export complet du module")
+        btn_export_full.setFixedHeight(32)
+        btn_export_full.setToolTip("Exporte TOUS les DECAs (validés, en attente, sans décision) avec statut, horodatage et commentaire")
+        btn_export_full.clicked.connect(self._export_full)
+        top.addWidget(btn_export_full)
+
+        btn_export_model = QPushButton("📥  Export modèle d'import")
+        btn_export_model.setFixedHeight(32)
+        btn_export_model.setStyleSheet(
+            "QPushButton { background:#0078d4; color:white; font-weight:bold; border-radius:4px; padding:0 10px; }"
+            "QPushButton:hover { background:#005fa3; }"
+        )
+        btn_export_model.setToolTip("Exporte la liste des marquages au format import : Marquage + colonnes [Service]")
+        btn_export_model.clicked.connect(self._export_model)
+        top.addWidget(btn_export_model)
         root.addLayout(top)
 
         # ── Splitter ──────────────────────────────────────────────────────
@@ -863,20 +874,54 @@ class MainWindow(QMainWindow):
 
     # ── Export ────────────────────────────────────────────────────────────────
 
-    def _export(self):
+    def _export_full(self):
+        """Export complet : tous les DECAs du module, peu importe le statut."""
         path, _ = QFileDialog.getSaveFileName(
-            self, "Exporter les décisions VALIDÉ",
-            f"export_{self._module}.xlsx", "Excel (*.xlsx)"
+            self, "Export complet du module",
+            f"export_complet_{self._module}.xlsx", "Excel (*.xlsx)"
         )
         if not path:
             return
-        rows = queries.get_decisions_for_export(self._module)
+        rows = queries.get_all_tools_for_export(self._module)
         if not rows:
-            QMessageBox.information(self, "Export vide", "Aucune décision VALIDÉ pour ce module.")
+            QMessageBox.information(self, "Export vide", "Aucun outil trouvé pour ce module.")
             return
         df = pd.DataFrame([dict(r) for r in rows])
+        df.rename(columns={
+            "marquage": "Marquage", "pn_short": "PN", "ref_constructeur": "Réf constructeur",
+            "service1": "Svc 1", "service2": "Svc 2", "service3": "Svc 3 actuel",
+            "service4": "Svc 4", "service5": "Svc 5",
+            "localisation1": "Loc 1", "localisation2": "Loc 2", "localisation3": "Loc 3",
+            "localisation4": "Loc 4", "assy_flag": "Assemblage",
+            "complexity_flag": "Complexité", "modules_effective": "Modules",
+            "decision": "Statut", "n_service1": "N.Service 1", "n_service2": "N.Service 2",
+            "n_service3": "N.Service 3", "n_service4": "N.Service 4",
+            "pre_check": "Pré-check", "dec_commentaire": "Commentaire décision",
+            "updated_at": "Horodatage", "updated_by": "Mis à jour par",
+        }, inplace=True)
         df.to_excel(path, index=False)
-        self.statusBar().showMessage(f"Export réussi → {path}", 5000)
+        self.statusBar().showMessage(f"Export complet réussi → {path}", 5000)
+
+    def _export_model(self):
+        """Export modèle d'import : Marquage + colonnes [Service] vides."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export modèle d'import",
+            f"modele_import_{self._module}.xlsx", "Excel (*.xlsx)"
+        )
+        if not path:
+            return
+        rows = queries.get_all_tools_for_export(self._module)
+        if not rows:
+            QMessageBox.information(self, "Export vide", "Aucun outil trouvé pour ce module.")
+            return
+        df = pd.DataFrame([dict(r) for r in rows])[["marquage"]]
+        df.columns = ["Marquage"]
+        df["[Service] Service1"] = ""
+        df["[Service] Service2"] = ""
+        df["[Service] Service3"] = ""
+        df["[Service] Service4"] = ""
+        df.to_excel(path, index=False)
+        self.statusBar().showMessage(f"Modèle d'import réussi → {path}", 5000)
 
 
 # ── Entrée ────────────────────────────────────────────────────────────────────
