@@ -779,7 +779,6 @@ class MainWindow(QMainWindow):
 
         # Panneau gauche
         left = QWidget()
-        left.setMinimumWidth(280)
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 6, 0)
         ll.addWidget(QLabel("<b>PNs du module</b>"))
@@ -810,6 +809,7 @@ class MainWindow(QMainWindow):
 
         # Table + barre de filtres
         self.table = DECATable()
+        self.table.setMinimumWidth(100)  # évite que Qt impose la somme des colonnes comme minimum fenêtre
         self.table.setColumnHidden(COL_PRECHECK, True)  # caché par défaut (mode utilisateur)
         self.col_filters = ColumnFilterBar(self.table)
         rl.addWidget(self.col_filters)
