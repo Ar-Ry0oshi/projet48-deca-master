@@ -19,8 +19,4 @@ if errorlevel 1 (
 )
 
 echo  Demarrage...
-"%PYTHON%" deca_manager.py
-
-echo.
-echo  DECA Manager ferme. Appuyez sur une touche pour quitter.
-pause >nul
+start "" "%PYTHON%" deca_manager.py
