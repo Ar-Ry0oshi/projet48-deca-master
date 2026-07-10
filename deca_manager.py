@@ -37,33 +37,36 @@ C_EN_COURS = "#ffffff"
 C_LOCKED   = "#f0f0f0"
 
 # ── Index colonnes ────────────────────────────────────────────────────────────
-COL_MARQ  = 0
-COL_REF   = 1
-COL_SVC3  = 2
-COL_SVC1  = 3
-COL_SVC2  = 4
-COL_SVC4  = 5
-COL_SVC5  = 6
-COL_LOC1  = 7
-COL_LOC2  = 8
-COL_LOC3  = 9
-COL_LOC4  = 10
-COL_LOC5  = 11
-COL_ASSY  = 12
-COL_CPXTY = 13
-COL_NSVC3 = 14
-COL_NSVC4 = 15
-COL_COMM  = 16
-COL_STAT  = 17
+COL_MARQ     = 0
+COL_REF      = 1
+COL_SVC3     = 2
+COL_SVC1     = 3
+COL_SVC2     = 4
+COL_SVC4     = 5
+COL_SVC5     = 6
+COL_LOC1     = 7
+COL_LOC2     = 8
+COL_LOC3     = 9
+COL_LOC4     = 10
+COL_LOC5     = 11
+COL_ASSY     = 12
+COL_CPXTY    = 13
+COL_NSVC3    = 14
+COL_NSVC4    = 15
+COL_COMM     = 16
+COL_PRECHECK = 17   # visible en mode Expert seulement
+COL_STAT     = 18
+
+PRECHECK_OPTIONS = ["", "OK", "OK?", "NOK", "New Service already defined"]
 
 HEADERS = [
     "Marquage", "Réf constructeur", "Svc 3 actuel",
     "Svc 1", "Svc 2", "Svc 4", "Svc 5",
     "Loc 1", "Loc 2", "Loc 3", "Loc 4", "Loc 5",
     "Assemblage", "Complexité",
-    "N.Service 3", "N.Service 4", "Commentaire", "Statut",
+    "N.Service 3", "N.Service 4", "Commentaire", "Pré-check", "Statut",
 ]
-COL_WIDTHS = [110, 140, 140, 110, 110, 110, 80, 90, 90, 90, 90, 80, 70, 100, 210, 210, 150, 80]
+COL_WIDTHS = [110, 140, 140, 110, 110, 110, 80, 90, 90, 90, 90, 80, 70, 100, 210, 210, 150, 100, 80]
 
 
 def _ro_item(text: str, bg: str) -> QTableWidgetItem:
@@ -419,15 +422,17 @@ class DECARow:
         self.locs       = [row_data.get(f"localisation{i}") or "" for i in range(1, 6)]
         self.assy       = row_data.get("assy_flag") or ""
         self.complexity = row_data.get("complexity_flag") or ""
-        self.locked     = bool(dec and dec.get("decision") == "VALIDÉ")
-        self.statut     = (dec or {}).get("decision") or "EN COURS"
+        self.locked       = bool(dec and dec.get("decision") == "VALIDÉ")
+        self.statut       = (dec or {}).get("decision") or "EN COURS"
         self.n_svc3_plain = (dec or {}).get("n_service3") or ""
         self.n_svc4_plain = (dec or {}).get("n_service4") or ""
         self.n_svc1       = (dec or {}).get("n_service1") or ""
         self.commentaire  = (dec or {}).get("commentaire") or ""
-        self.combo_svc3: QComboBox | None = None
-        self.combo_svc4: QComboBox | None = None
-        self.edit_comm:  QLineEdit | None = None
+        self.pre_check    = (dec or {}).get("pre_check") or ""
+        self.combo_svc3:    QComboBox | None = None
+        self.combo_svc4:    QComboBox | None = None
+        self.edit_comm:     QLineEdit | None = None
+        self.combo_precheck: QComboBox | None = None
 
 
 # ── Table DECA ────────────────────────────────────────────────────────────────
@@ -462,6 +467,49 @@ class DECATable(QTableWidget):
 
         # Double-clic → fiche
         self.doubleClicked.connect(self._on_double_click)
+
+        # Clic droit sur une ligne → menu contextuel
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._row_menu)
+
+    def _row_menu(self, pos):
+        index = self.indexAt(pos)
+        if not index.isValid() or index.row() >= len(self._rows):
+            return
+        drow = self._rows[index.row()]
+        menu = QMenu(self)
+
+        if not drow.locked:
+            act_copy = menu.addAction("↓  Appliquer N.Service 3/4 à toutes les lignes")
+        else:
+            act_copy = None
+
+        act_unlock = menu.addAction("🔓  Déverrouiller cette ligne")
+        if not drow.locked:
+            act_unlock.setEnabled(False)
+
+        chosen = menu.exec(self.viewport().mapToGlobal(pos))
+        if not chosen:
+            return
+
+        if chosen is act_copy:
+            self.apply_svc3_to_all(drow)
+            return
+
+        if chosen is act_unlock:
+            confirm = QMessageBox.question(
+                self, "Déverrouiller",
+                f"Déverrouiller  {drow.marquage}  ?\n\nLa décision VALIDÉ sera remise en EN COURS.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+            queries.reset_decision(drow.marquage, reset_by="manager_user")
+            parent = self.parent()
+            while parent and not isinstance(parent, MainWindow):
+                parent = parent.parent()
+            if parent:
+                parent._on_pn_selected(parent.pn_list.currentItem(), None)
 
     def _column_menu(self, pos):
         menu = QMenu(self)
@@ -523,14 +571,15 @@ class DECATable(QTableWidget):
         self.setItem(r, COL_LOC5,  _ro_item(drow.locs[4], bg))
         self.setItem(r, COL_ASSY,  _ro_item(drow.assy, bg))
         self.setItem(r, COL_CPXTY, _ro_item(drow.complexity, bg))
-        self.setItem(r, COL_STAT,  _ro_item(drow.statut, bg))
+        self.setItem(r, COL_STAT, _ro_item(drow.statut, bg))
 
         if drow.locked:
             svc3_d = svc3_label(drow.n_svc3_plain, drow.n_svc1) if drow.n_svc3_plain and drow.n_svc1 else drow.n_svc3_plain
             svc4_d = svc4_label(drow.n_svc4_plain, drow.n_svc1) if drow.n_svc4_plain and drow.n_svc1 else drow.n_svc4_plain
-            self.setItem(r, COL_NSVC3, _ro_item(svc3_d, bg))
-            self.setItem(r, COL_NSVC4, _ro_item(svc4_d, bg))
-            self.setItem(r, COL_COMM,  _ro_item(drow.commentaire, bg))
+            self.setItem(r, COL_NSVC3,    _ro_item(svc3_d, bg))
+            self.setItem(r, COL_NSVC4,    _ro_item(svc4_d, bg))
+            self.setItem(r, COL_COMM,     _ro_item(drow.commentaire, bg))
+            self.setItem(r, COL_PRECHECK, _ro_item(drow.pre_check, bg))
             return
 
         cb3 = self._make_combo(self._svc3_opts)
@@ -547,15 +596,22 @@ class DECATable(QTableWidget):
         ed.setFrame(False)
         ed.setStyleSheet("padding: 2px 4px;")
 
-        drow.combo_svc3 = cb3
-        drow.combo_svc4 = cb4
-        drow.edit_comm  = ed
+        cb_pc = QComboBox()
+        cb_pc.addItems(PRECHECK_OPTIONS)
+        if drow.pre_check in PRECHECK_OPTIONS:
+            cb_pc.setCurrentText(drow.pre_check)
+
+        drow.combo_svc3     = cb3
+        drow.combo_svc4     = cb4
+        drow.edit_comm      = ed
+        drow.combo_precheck = cb_pc
 
         cb3.currentTextChanged.connect(lambda txt, d=drow: self._on_svc3_change(txt, d))
 
-        self.setCellWidget(r, COL_NSVC3, cb3)
-        self.setCellWidget(r, COL_NSVC4, cb4)
-        self.setCellWidget(r, COL_COMM,  ed)
+        self.setCellWidget(r, COL_NSVC3,    cb3)
+        self.setCellWidget(r, COL_NSVC4,    cb4)
+        self.setCellWidget(r, COL_COMM,     ed)
+        self.setCellWidget(r, COL_PRECHECK, cb_pc)
 
     @staticmethod
     def _make_combo(items: list[str]) -> QComboBox:
@@ -567,6 +623,20 @@ class DECATable(QTableWidget):
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         cb.setCompleter(completer)
+
+        def _autofill():
+            typed = cb.lineEdit().text().strip().lower()
+            if not typed:
+                return
+            for i in range(cb.count()):
+                if typed in cb.itemText(i).lower():
+                    cb.setCurrentIndex(i)
+                    return
+            # Aucun match : remet le texte de l'item actuel
+            cb.lineEdit().setText(cb.currentText())
+
+        cb.lineEdit().returnPressed.connect(_autofill)
+        cb.lineEdit().editingFinished.connect(_autofill)
         return cb
 
     def _on_svc3_change(self, label: str, drow: DECARow):
@@ -611,8 +681,24 @@ class DECATable(QTableWidget):
                 "svc2":        svc2s[0] if svc2s else "",
                 "svc4":        svc4_plain,
                 "commentaire": drow.edit_comm.text() if drow.edit_comm else "",
+                "pre_check":   drow.combo_precheck.currentText() if drow.combo_precheck else "",
             })
         return result
+
+    def apply_svc3_to_all(self, source_drow: DECARow):
+        """Copie N.Service 3 et 4 de source_drow vers toutes les lignes non verrouillées."""
+        svc3_txt = source_drow.combo_svc3.currentText() if source_drow.combo_svc3 else ""
+        svc4_txt = source_drow.combo_svc4.currentText() if source_drow.combo_svc4 else ""
+        for drow in self._rows:
+            if drow is source_drow or drow.locked or not drow.combo_svc3:
+                continue
+            idx3 = drow.combo_svc3.findText(svc3_txt)
+            if idx3 >= 0:
+                drow.combo_svc3.setCurrentIndex(idx3)
+            if drow.combo_svc4 and svc4_txt:
+                idx4 = drow.combo_svc4.findText(svc4_txt)
+                if idx4 >= 0:
+                    drow.combo_svc4.setCurrentIndex(idx4)
 
     def open_detail_for_selected(self):
         rows = self.selectionModel().selectedRows()
@@ -633,6 +719,7 @@ class MainWindow(QMainWindow):
         self._module = MODULES[0]
         self._current_pn: str | None = None
         self._pn_items: list[QListWidgetItem] = []
+        self._expert_mode = False
         self._setup_ui()
         self._load_module(self._module)
         # Pré-charger l'index photos en arrière-plan
@@ -658,6 +745,17 @@ class MainWindow(QMainWindow):
         font_b = QFont(); font_b.setBold(True)
         self.lbl_stats.setFont(font_b)
         top.addWidget(self.lbl_stats)
+        top.addSpacing(20)
+        self.btn_mode = QPushButton("Mode : Suggestion")
+        self.btn_mode.setFixedHeight(32)
+        self.btn_mode.setFixedWidth(190)
+        self.btn_mode.setCheckable(True)
+        self.btn_mode.setStyleSheet(
+            "QPushButton { border:2px solid #888; border-radius:4px; padding:0 10px; }"
+            "QPushButton:checked { background:#1f497d; color:white; border-color:#1f497d; font-weight:bold; }"
+        )
+        self.btn_mode.clicked.connect(self._toggle_mode)
+        top.addWidget(self.btn_mode)
         top.addStretch()
         btn_export_full = QPushButton("📋  Export complet du module")
         btn_export_full.setFixedHeight(32)
@@ -679,8 +777,9 @@ class MainWindow(QMainWindow):
         # ── Splitter ──────────────────────────────────────────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Panneau gauche
+        # Panneau gauche — largeur fixe pour que les PNs soient toujours visibles
         left = QWidget()
+        left.setFixedWidth(300)
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 6, 0)
         ll.addWidget(QLabel("<b>PNs du module</b>"))
@@ -711,6 +810,9 @@ class MainWindow(QMainWindow):
 
         # Table + barre de filtres
         self.table = DECATable()
+        self.table.setMinimumWidth(100)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.table.setColumnHidden(COL_PRECHECK, True)  # caché par défaut (mode utilisateur)
         self.col_filters = ColumnFilterBar(self.table)
         rl.addWidget(self.col_filters)
         rl.addWidget(self.table)
@@ -748,6 +850,27 @@ class MainWindow(QMainWindow):
         root.addWidget(splitter)
         self.setStatusBar(QStatusBar())
 
+    # ── Mode Expert/Utilisateur ───────────────────────────────────────────────
+
+    def _toggle_mode(self):
+        self._expert_mode = self.btn_mode.isChecked()
+        if self._expert_mode:
+            self.btn_mode.setText("Mode : Confirmation  🔬")
+            self.btn_valider.setText("📋  Pré-checker & suivant")
+            self.btn_valider.setStyleSheet(
+                "QPushButton { background:#1f497d; color:white; font-weight:bold; border-radius:4px; }"
+                "QPushButton:hover { background:#163a69; }"
+            )
+        else:
+            self.btn_mode.setText("Mode : Suggestion")
+            self.btn_valider.setText("✓  Valider & suivant")
+            self.btn_valider.setStyleSheet(
+                "QPushButton { background:#21c354; color:white; font-weight:bold; border-radius:4px; }"
+                "QPushButton:hover { background:#1aad47; }"
+            )
+        # Affiche/cache la colonne Pré-check
+        self.table.setColumnHidden(COL_PRECHECK, not self._expert_mode)
+
     # ── Chargement module ─────────────────────────────────────────────────────
 
     def _load_module(self, module: str):
@@ -762,24 +885,61 @@ class MainWindow(QMainWindow):
         self.pn_list.clear()
         self._pn_items.clear()
 
-        pns = queries.get_pn_list_for_module(self._module)
         all_tools = queries.get_tools_for_module(self._module)
         decisions = queries.get_decisions_batch_for_module(self._module)
 
-        marquages_by_pn: dict[str, list[str]] = {}
+        # Agrège par PN : marquages, complexité, nb DECAs
+        pn_data: dict[str, dict] = {}
         for r in all_tools:
-            marquages_by_pn.setdefault(r["pn_short"], []).append(r["marquage"])
+            pn = r["pn_short"]
+            if pn not in pn_data:
+                pn_data[pn] = {
+                    "marquages": [],
+                    "complexity": r["complexity_flag"] or "unique",
+                }
+            pn_data[pn]["marquages"].append(r["marquage"])
 
-        for pn in pns:
-            mqs = marquages_by_pn.get(pn, [])
-            statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
-            done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+        # Tri par groupe puis par nb de DECAs décroissant
+        GROUPS = [
+            ("multi_deca",   "── Multi-DECAs ──────────────"),
+            ("multi_module", "── Multi-modules ────────────"),
+            ("unique",       "── DECA unique ──────────────"),
+            ("no_match",     "── Sans module ──────────────"),
+        ]
 
-            item = QListWidgetItem(f"{'✓  ' if done else '   '}{pn}")
-            item.setData(Qt.ItemDataRole.UserRole, {"pn": pn, "done": done})
-            item.setBackground(QColor(C_VALIDE if done else C_EN_COURS))
-            self.pn_list.addItem(item)
-            self._pn_items.append(item)
+        def _add_separator(label: str):
+            sep = QListWidgetItem(label)
+            sep.setFlags(Qt.ItemFlag.NoItemFlags)
+            sep.setForeground(QColor("#666666"))
+            font = QFont(); font.setBold(True); font.setPointSize(8)
+            sep.setFont(font)
+            sep.setBackground(QColor("#e8e8e8"))
+            self.pn_list.addItem(sep)
+
+        for complexity, label in GROUPS:
+            pns_in_group = sorted(
+                [pn for pn, d in pn_data.items() if d["complexity"] == complexity],
+                key=lambda pn: -len(pn_data[pn]["marquages"])
+            )
+            if not pns_in_group:
+                continue
+            # Progression du groupe
+            g_done  = sum(1 for pn in pns_in_group
+                          if all(decisions.get(m, {}).get("decision") in ("VALIDÉ", "EN ATTENTE")
+                                 for m in pn_data[pn]["marquages"]))
+            g_total = len(pns_in_group)
+            _add_separator(f"{label}  {g_done}/{g_total}")
+            for pn in pns_in_group:
+                mqs = pn_data[pn]["marquages"]
+                statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
+                done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+                count = len(mqs)
+                label_pn = f"{'✓' if done else ' '}  {pn}  ({count})"
+                item = QListWidgetItem(label_pn)
+                item.setData(Qt.ItemDataRole.UserRole, {"pn": pn, "done": done})
+                item.setBackground(QColor(C_VALIDE if done else C_EN_COURS))
+                self.pn_list.addItem(item)
+                self._pn_items.append(item)
 
         self._filter_list()
 
@@ -795,6 +955,21 @@ class MainWindow(QMainWindow):
             if status == "Traités" and not done:
                 match = False
             item.setHidden(not match)
+        # Cacher les séparateurs dont tous les enfants sont cachés
+        for i in range(self.pn_list.count()):
+            it = self.pn_list.item(i)
+            if it.data(Qt.ItemDataRole.UserRole) is not None:
+                continue  # c'est un PN, pas un séparateur
+            # Cherche si au moins un PN visible suit ce séparateur
+            visible = False
+            for j in range(i + 1, self.pn_list.count()):
+                nxt = self.pn_list.item(j)
+                if nxt.data(Qt.ItemDataRole.UserRole) is None:
+                    break  # prochain séparateur
+                if not nxt.isHidden():
+                    visible = True
+                    break
+            it.setHidden(not visible)
 
     def _update_stats(self):
         total = len(self._pn_items)
@@ -816,12 +991,12 @@ class MainWindow(QMainWindow):
     def _next_pn(self):
         for i in range(self.pn_list.count()):
             it = self.pn_list.item(i)
-            if it.isHidden():
+            if it.isHidden() or it.data(Qt.ItemDataRole.UserRole) is None:
                 continue
             if it.data(Qt.ItemDataRole.UserRole)["pn"] == self._current_pn:
                 for j in range(i + 1, self.pn_list.count()):
                     nxt = self.pn_list.item(j)
-                    if not nxt.isHidden():
+                    if not nxt.isHidden() and nxt.data(Qt.ItemDataRole.UserRole) is not None:
                         self.pn_list.setCurrentItem(nxt)
                         return
                 break
@@ -847,10 +1022,13 @@ class MainWindow(QMainWindow):
             )
             return
 
+        decision_val = "EN ATTENTE" if self._expert_mode else "VALIDÉ"
+        updated_by   = "manager_expert" if self._expert_mode else "manager_user"
+
         for f in forms:
             existing = queries.get_decision(f["marquage"])
             if existing and existing["decision"] == "EN ATTENTE":
-                queries.reset_decision(f["marquage"], reset_by="manager_user")
+                queries.reset_decision(f["marquage"], reset_by=updated_by)
             queries.upsert_decision(
                 marquage       = f["marquage"],
                 pn_short       = f["pn_short"],
@@ -859,14 +1037,15 @@ class MainWindow(QMainWindow):
                 n_service2     = f["svc2"] or None,
                 n_service3     = f["svc3"] or None,
                 n_service4     = f["svc4"] or None,
-                pre_check      = None,
-                decision       = "VALIDÉ",
+                pre_check      = f["pre_check"] or None,
+                decision       = decision_val,
                 commentaire    = f["commentaire"] or None,
-                updated_by     = "manager_user",
+                updated_by     = updated_by,
             )
 
+        label = "mis en attente" if self._expert_mode else "validé(s)"
         self.statusBar().showMessage(
-            f"✓  {len(forms)} DECA(s) validé(s) pour {self._current_pn}.", 4000
+            f"{'📋' if self._expert_mode else '✓'}  {len(forms)} DECA(s) {label} pour {self._current_pn}.", 4000
         )
         self._reload_pn_list()
         self._update_stats()
@@ -945,5 +1124,5 @@ if __name__ == "__main__":
     app.setPalette(palette)
 
     win = MainWindow()
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec())
