@@ -807,24 +807,56 @@ class MainWindow(QMainWindow):
         self.pn_list.clear()
         self._pn_items.clear()
 
-        pns = queries.get_pn_list_for_module(self._module)
         all_tools = queries.get_tools_for_module(self._module)
         decisions = queries.get_decisions_batch_for_module(self._module)
 
-        marquages_by_pn: dict[str, list[str]] = {}
+        # Agrège par PN : marquages, complexité, nb DECAs
+        pn_data: dict[str, dict] = {}
         for r in all_tools:
-            marquages_by_pn.setdefault(r["pn_short"], []).append(r["marquage"])
+            pn = r["pn_short"]
+            if pn not in pn_data:
+                pn_data[pn] = {
+                    "marquages": [],
+                    "complexity": r.get("complexity_flag") or "unique",
+                }
+            pn_data[pn]["marquages"].append(r["marquage"])
 
-        for pn in pns:
-            mqs = marquages_by_pn.get(pn, [])
-            statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
-            done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+        # Tri par groupe puis par nb de DECAs décroissant
+        GROUPS = [
+            ("multi_deca",   "── Multi-DECAs ──────────────"),
+            ("multi_module", "── Multi-modules ────────────"),
+            ("unique",       "── DECA unique ──────────────"),
+            ("no_match",     "── Sans module ──────────────"),
+        ]
 
-            item = QListWidgetItem(f"{'✓  ' if done else '   '}{pn}")
-            item.setData(Qt.ItemDataRole.UserRole, {"pn": pn, "done": done})
-            item.setBackground(QColor(C_VALIDE if done else C_EN_COURS))
-            self.pn_list.addItem(item)
-            self._pn_items.append(item)
+        def _add_separator(label: str):
+            sep = QListWidgetItem(label)
+            sep.setFlags(Qt.ItemFlag.NoItemFlags)
+            sep.setForeground(QColor("#666666"))
+            font = QFont(); font.setBold(True); font.setPointSize(8)
+            sep.setFont(font)
+            sep.setBackground(QColor("#e8e8e8"))
+            self.pn_list.addItem(sep)
+
+        for complexity, label in GROUPS:
+            pns_in_group = sorted(
+                [pn for pn, d in pn_data.items() if d["complexity"] == complexity],
+                key=lambda pn: -len(pn_data[pn]["marquages"])
+            )
+            if not pns_in_group:
+                continue
+            _add_separator(label)
+            for pn in pns_in_group:
+                mqs = pn_data[pn]["marquages"]
+                statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
+                done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+                count = len(mqs)
+                label_pn = f"{'✓' if done else ' '}  {pn}  ({count})"
+                item = QListWidgetItem(label_pn)
+                item.setData(Qt.ItemDataRole.UserRole, {"pn": pn, "done": done})
+                item.setBackground(QColor(C_VALIDE if done else C_EN_COURS))
+                self.pn_list.addItem(item)
+                self._pn_items.append(item)
 
         self._filter_list()
 
@@ -840,6 +872,21 @@ class MainWindow(QMainWindow):
             if status == "Traités" and not done:
                 match = False
             item.setHidden(not match)
+        # Cacher les séparateurs dont tous les enfants sont cachés
+        for i in range(self.pn_list.count()):
+            it = self.pn_list.item(i)
+            if it.data(Qt.ItemDataRole.UserRole) is not None:
+                continue  # c'est un PN, pas un séparateur
+            # Cherche si au moins un PN visible suit ce séparateur
+            visible = False
+            for j in range(i + 1, self.pn_list.count()):
+                nxt = self.pn_list.item(j)
+                if nxt.data(Qt.ItemDataRole.UserRole) is None:
+                    break  # prochain séparateur
+                if not nxt.isHidden():
+                    visible = True
+                    break
+            it.setHidden(not visible)
 
     def _update_stats(self):
         total = len(self._pn_items)
