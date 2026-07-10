@@ -777,8 +777,9 @@ class MainWindow(QMainWindow):
         # ── Splitter ──────────────────────────────────────────────────────
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Panneau gauche
+        # Panneau gauche — largeur fixe pour que les PNs soient toujours visibles
         left = QWidget()
+        left.setFixedWidth(300)
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 6, 0)
         ll.addWidget(QLabel("<b>PNs du module</b>"))
@@ -809,7 +810,8 @@ class MainWindow(QMainWindow):
 
         # Table + barre de filtres
         self.table = DECATable()
-        self.table.setMinimumWidth(100)  # évite que Qt impose la somme des colonnes comme minimum fenêtre
+        self.table.setMinimumWidth(100)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.setColumnHidden(COL_PRECHECK, True)  # caché par défaut (mode utilisateur)
         self.col_filters = ColumnFilterBar(self.table)
         rl.addWidget(self.col_filters)
@@ -1122,5 +1124,5 @@ if __name__ == "__main__":
     app.setPalette(palette)
 
     win = MainWindow()
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec())
