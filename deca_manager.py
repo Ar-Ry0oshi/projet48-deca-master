@@ -779,6 +779,7 @@ class MainWindow(QMainWindow):
 
         # Panneau gauche
         left = QWidget()
+        left.setMinimumWidth(280)
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 6, 0)
         ll.addWidget(QLabel("<b>PNs du module</b>"))
