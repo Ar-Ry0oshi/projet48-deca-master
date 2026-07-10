@@ -17,7 +17,7 @@ if not exist "!PYTHON!" (
     if errorlevel 1 (
         echo  [ERREUR] Python introuvable.
         echo  Installe Python 3.10+ depuis https://www.python.org/downloads/
-        echo  ou contacte l'administrateur.
+        echo  ou contacte l administrateur.
         pause
         exit /b 1
     )
@@ -43,7 +43,7 @@ if errorlevel 1 (
     echo  [INFO] Installation des dependances (peut prendre 1-2 min)...
     "!PYTHON!" -m pip install --quiet PyQt6 pandas openpyxl
     if errorlevel 1 (
-        echo  [ERREUR] Echec de l'installation. Lance manuellement :
+        echo  [ERREUR] Echec installation. Lance manuellement :
         echo  "!PYTHON!" -m pip install PyQt6 pandas openpyxl
         pause
         exit /b 1
@@ -56,7 +56,7 @@ echo  Demarrage de DECA Manager...
 "!PYTHON!" deca_manager.py
 if errorlevel 1 (
     echo.
-    echo  [ERREUR] DECA Manager s'est ferme avec une erreur.
+    echo  [ERREUR] DECA Manager ferme avec une erreur.
     echo  Relance depuis un terminal pour voir le detail :
     echo  "!PYTHON!" deca_manager.py
     echo.
