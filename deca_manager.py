@@ -817,7 +817,7 @@ class MainWindow(QMainWindow):
             if pn not in pn_data:
                 pn_data[pn] = {
                     "marquages": [],
-                    "complexity": r.get("complexity_flag") or "unique",
+                    "complexity": r["complexity_flag"] or "unique",
                 }
             pn_data[pn]["marquages"].append(r["marquage"])
 
