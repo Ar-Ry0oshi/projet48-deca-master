@@ -746,7 +746,7 @@ class MainWindow(QMainWindow):
         self.lbl_stats.setFont(font_b)
         top.addWidget(self.lbl_stats)
         top.addSpacing(20)
-        self.btn_mode = QPushButton("Mode : Utilisateur")
+        self.btn_mode = QPushButton("Mode : Suggestion")
         self.btn_mode.setFixedHeight(32)
         self.btn_mode.setCheckable(True)
         self.btn_mode.setStyleSheet(
@@ -851,14 +851,14 @@ class MainWindow(QMainWindow):
     def _toggle_mode(self):
         self._expert_mode = self.btn_mode.isChecked()
         if self._expert_mode:
-            self.btn_mode.setText("Mode : Expert  🔬")
+            self.btn_mode.setText("Mode : Confirmation  🔬")
             self.btn_valider.setText("📋  Pré-checker & suivant")
             self.btn_valider.setStyleSheet(
                 "QPushButton { background:#1f497d; color:white; font-weight:bold; border-radius:4px; }"
                 "QPushButton:hover { background:#163a69; }"
             )
         else:
-            self.btn_mode.setText("Mode : Utilisateur")
+            self.btn_mode.setText("Mode : Suggestion")
             self.btn_valider.setText("✓  Valider & suivant")
             self.btn_valider.setStyleSheet(
                 "QPushButton { background:#21c354; color:white; font-weight:bold; border-radius:4px; }"
