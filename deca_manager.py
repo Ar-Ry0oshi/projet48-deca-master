@@ -598,6 +598,20 @@ class DECATable(QTableWidget):
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         cb.setCompleter(completer)
+
+        def _autofill():
+            typed = cb.lineEdit().text().strip().lower()
+            if not typed:
+                return
+            for i in range(cb.count()):
+                if typed in cb.itemText(i).lower():
+                    cb.setCurrentIndex(i)
+                    return
+            # Aucun match : remet le texte de l'item actuel
+            cb.lineEdit().setText(cb.currentText())
+
+        cb.lineEdit().returnPressed.connect(_autofill)
+        cb.lineEdit().editingFinished.connect(_autofill)
         return cb
 
     def _on_svc3_change(self, label: str, drow: DECARow):
