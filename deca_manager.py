@@ -40,20 +40,30 @@ C_LOCKED   = "#f0f0f0"
 COL_MARQ  = 0
 COL_REF   = 1
 COL_SVC3  = 2
-COL_LOC   = 3
-COL_ASSY  = 4
-COL_CPXTY = 5
-COL_NSVC3 = 6
-COL_NSVC4 = 7
-COL_COMM  = 8
-COL_STAT  = 9
+COL_SVC1  = 3
+COL_SVC2  = 4
+COL_SVC4  = 5
+COL_SVC5  = 6
+COL_LOC1  = 7
+COL_LOC2  = 8
+COL_LOC3  = 9
+COL_LOC4  = 10
+COL_LOC5  = 11
+COL_ASSY  = 12
+COL_CPXTY = 13
+COL_NSVC3 = 14
+COL_NSVC4 = 15
+COL_COMM  = 16
+COL_STAT  = 17
 
 HEADERS = [
-    "Marquage", "Réf constructeur", "Service 3 actuel",
-    "Localisation", "Assemblage", "Complexité",
+    "Marquage", "Réf constructeur", "Svc 3 actuel",
+    "Svc 1", "Svc 2", "Svc 4", "Svc 5",
+    "Loc 1", "Loc 2", "Loc 3", "Loc 4", "Loc 5",
+    "Assemblage", "Complexité",
     "N.Service 3", "N.Service 4", "Commentaire", "Statut",
 ]
-COL_WIDTHS = [110, 150, 150, 120, 70, 100, 210, 210, 160, 80]
+COL_WIDTHS = [110, 140, 140, 110, 110, 110, 80, 90, 90, 90, 90, 80, 70, 100, 210, 210, 150, 80]
 
 
 def _ro_item(text: str, bg: str) -> QTableWidgetItem:
@@ -405,10 +415,11 @@ class DECARow:
         self.pn_short   = row_data["pn_short"]
         self.ref        = row_data.get("ref_constructeur") or ""
         self.svc3_cur   = row_data.get("service3") or ""
-        self.loc        = row_data.get("localisation3") or ""
+        self.svcs       = [row_data.get(f"service{i}") or "" for i in range(1, 6)]
+        self.locs       = [row_data.get(f"localisation{i}") or "" for i in range(1, 6)]
         self.assy       = row_data.get("assy_flag") or ""
         self.complexity = row_data.get("complexity_flag") or ""
-        self.locked     = bool(dec and dec.get("decision") in ("VALIDÉ", "EN ATTENTE"))
+        self.locked     = bool(dec and dec.get("decision") == "VALIDÉ")
         self.statut     = (dec or {}).get("decision") or "EN COURS"
         self.n_svc3_plain = (dec or {}).get("n_service3") or ""
         self.n_svc4_plain = (dec or {}).get("n_service4") or ""
@@ -501,7 +512,15 @@ class DECATable(QTableWidget):
         self.setItem(r, COL_MARQ,  _ro_item(drow.marquage, bg))
         self.setItem(r, COL_REF,   _ro_item(drow.ref, bg))
         self.setItem(r, COL_SVC3,  _ro_item(drow.svc3_cur, bg))
-        self.setItem(r, COL_LOC,   _ro_item(drow.loc, bg))
+        self.setItem(r, COL_SVC1,  _ro_item(drow.svcs[0], bg))
+        self.setItem(r, COL_SVC2,  _ro_item(drow.svcs[1], bg))
+        self.setItem(r, COL_SVC4,  _ro_item(drow.svcs[3], bg))
+        self.setItem(r, COL_SVC5,  _ro_item(drow.svcs[4], bg))
+        self.setItem(r, COL_LOC1,  _ro_item(drow.locs[0], bg))
+        self.setItem(r, COL_LOC2,  _ro_item(drow.locs[1], bg))
+        self.setItem(r, COL_LOC3,  _ro_item(drow.locs[2], bg))
+        self.setItem(r, COL_LOC4,  _ro_item(drow.locs[3], bg))
+        self.setItem(r, COL_LOC5,  _ro_item(drow.locs[4], bg))
         self.setItem(r, COL_ASSY,  _ro_item(drow.assy, bg))
         self.setItem(r, COL_CPXTY, _ro_item(drow.complexity, bg))
         self.setItem(r, COL_STAT,  _ro_item(drow.statut, bg))
@@ -640,10 +659,21 @@ class MainWindow(QMainWindow):
         self.lbl_stats.setFont(font_b)
         top.addWidget(self.lbl_stats)
         top.addStretch()
-        btn_export = QPushButton("📥  Exporter XLSX")
-        btn_export.setFixedHeight(32)
-        btn_export.clicked.connect(self._export)
-        top.addWidget(btn_export)
+        btn_export_full = QPushButton("📋  Export complet du module")
+        btn_export_full.setFixedHeight(32)
+        btn_export_full.setToolTip("Exporte TOUS les DECAs (validés, en attente, sans décision) avec statut, horodatage et commentaire")
+        btn_export_full.clicked.connect(self._export_full)
+        top.addWidget(btn_export_full)
+
+        btn_export_model = QPushButton("📥  Export modèle d'import")
+        btn_export_model.setFixedHeight(32)
+        btn_export_model.setStyleSheet(
+            "QPushButton { background:#0078d4; color:white; font-weight:bold; border-radius:4px; padding:0 10px; }"
+            "QPushButton:hover { background:#005fa3; }"
+        )
+        btn_export_model.setToolTip("Exporte la liste des marquages au format import : Marquage + colonnes [Service]")
+        btn_export_model.clicked.connect(self._export_model)
+        top.addWidget(btn_export_model)
         root.addLayout(top)
 
         # ── Splitter ──────────────────────────────────────────────────────
@@ -714,7 +744,7 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(left)
         splitter.addWidget(right)
-        splitter.setSizes([240, 1160])
+        splitter.setSizes([300, 1100])
         root.addWidget(splitter)
         self.setStatusBar(QStatusBar())
 
@@ -818,6 +848,9 @@ class MainWindow(QMainWindow):
             return
 
         for f in forms:
+            existing = queries.get_decision(f["marquage"])
+            if existing and existing["decision"] == "EN ATTENTE":
+                queries.reset_decision(f["marquage"], reset_by="manager_user")
             queries.upsert_decision(
                 marquage       = f["marquage"],
                 pn_short       = f["pn_short"],
@@ -841,20 +874,54 @@ class MainWindow(QMainWindow):
 
     # ── Export ────────────────────────────────────────────────────────────────
 
-    def _export(self):
+    def _export_full(self):
+        """Export complet : tous les DECAs du module, peu importe le statut."""
         path, _ = QFileDialog.getSaveFileName(
-            self, "Exporter les décisions VALIDÉ",
-            f"export_{self._module}.xlsx", "Excel (*.xlsx)"
+            self, "Export complet du module",
+            f"export_complet_{self._module}.xlsx", "Excel (*.xlsx)"
         )
         if not path:
             return
-        rows = queries.get_decisions_for_export(self._module)
+        rows = queries.get_all_tools_for_export(self._module)
         if not rows:
-            QMessageBox.information(self, "Export vide", "Aucune décision VALIDÉ pour ce module.")
+            QMessageBox.information(self, "Export vide", "Aucun outil trouvé pour ce module.")
             return
         df = pd.DataFrame([dict(r) for r in rows])
+        df.rename(columns={
+            "marquage": "Marquage", "pn_short": "PN", "ref_constructeur": "Réf constructeur",
+            "service1": "Svc 1", "service2": "Svc 2", "service3": "Svc 3 actuel",
+            "service4": "Svc 4", "service5": "Svc 5",
+            "localisation1": "Loc 1", "localisation2": "Loc 2", "localisation3": "Loc 3",
+            "localisation4": "Loc 4", "assy_flag": "Assemblage",
+            "complexity_flag": "Complexité", "modules_effective": "Modules",
+            "decision": "Statut", "n_service1": "N.Service 1", "n_service2": "N.Service 2",
+            "n_service3": "N.Service 3", "n_service4": "N.Service 4",
+            "pre_check": "Pré-check", "dec_commentaire": "Commentaire décision",
+            "updated_at": "Horodatage", "updated_by": "Mis à jour par",
+        }, inplace=True)
         df.to_excel(path, index=False)
-        self.statusBar().showMessage(f"Export réussi → {path}", 5000)
+        self.statusBar().showMessage(f"Export complet réussi → {path}", 5000)
+
+    def _export_model(self):
+        """Export modèle d'import : Marquage + colonnes [Service] vides."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export modèle d'import",
+            f"modele_import_{self._module}.xlsx", "Excel (*.xlsx)"
+        )
+        if not path:
+            return
+        rows = queries.get_all_tools_for_export(self._module)
+        if not rows:
+            QMessageBox.information(self, "Export vide", "Aucun outil trouvé pour ce module.")
+            return
+        df = pd.DataFrame([dict(r) for r in rows])[["marquage"]]
+        df.columns = ["Marquage"]
+        df["[Service] Service1"] = ""
+        df["[Service] Service2"] = ""
+        df["[Service] Service3"] = ""
+        df["[Service] Service4"] = ""
+        df.to_excel(path, index=False)
+        self.statusBar().showMessage(f"Modèle d'import réussi → {path}", 5000)
 
 
 # ── Entrée ────────────────────────────────────────────────────────────────────
