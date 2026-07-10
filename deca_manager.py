@@ -744,7 +744,7 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(left)
         splitter.addWidget(right)
-        splitter.setSizes([240, 1160])
+        splitter.setSizes([300, 1100])
         root.addWidget(splitter)
         self.setStatusBar(QStatusBar())
 
