@@ -242,6 +242,10 @@ class DECADetailDialog(QDialog):
             lbl = QLabel(tool_d["commentaire"])
             lbl.setWordWrap(True)
             lbl.setStyleSheet("background:#fff8e1; padding:6px; border-radius:4px;")
+            lbl.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse |
+                Qt.TextInteractionFlag.TextSelectableByKeyboard
+            )
             self.info_layout.addWidget(lbl)
 
         self._add_section("Décision")
