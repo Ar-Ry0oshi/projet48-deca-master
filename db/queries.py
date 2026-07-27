@@ -276,6 +276,28 @@ def get_complexity_stats_for_module(module: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Global search
+# ---------------------------------------------------------------------------
+
+def global_search(query: str) -> list:
+    """Recherche un PN ou un marquage dans tous les modules, toutes décisions."""
+    q = f"%{query.strip().upper()}%"
+    return db.fetchall("""
+        SELECT
+            t.pn_short, t.marquage, t.modules_effective,
+            t.ref_constructeur, t.complexity_flag,
+            d.decision, d.n_service3, d.n_service4
+        FROM tools t
+        LEFT JOIN decisions d ON d.marquage = t.marquage
+        WHERE (UPPER(t.pn_short) LIKE ? OR UPPER(t.marquage) LIKE ?)
+          AND t.pn_short IS NOT NULL
+          AND t.is_excluded = 0
+        ORDER BY t.pn_short, t.marquage
+        LIMIT 100
+    """, (q, q))
+
+
+# ---------------------------------------------------------------------------
 # Changelog
 # ---------------------------------------------------------------------------
 

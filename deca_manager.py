@@ -287,6 +287,10 @@ class DECADetailDialog(QDialog):
             lbl_k = QLabel(f"<span style='color:#555;'>{label}</span>")
             lbl_v = QLabel(f"<b>{value}</b>")
             lbl_v.setWordWrap(True)
+            lbl_v.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse |
+                Qt.TextInteractionFlag.TextSelectableByKeyboard
+            )
             grid.addWidget(lbl_k, row, 0)
             grid.addWidget(lbl_v, row, 1)
             row += 1
@@ -700,6 +704,14 @@ class DECATable(QTableWidget):
                 if idx4 >= 0:
                     drow.combo_svc4.setCurrentIndex(idx4)
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_C and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            selected = self.selectedItems()
+            if selected:
+                QApplication.clipboard().setText(selected[0].text())
+            return
+        super().keyPressEvent(event)
+
     def open_detail_for_selected(self):
         rows = self.selectionModel().selectedRows()
         if not rows:
@@ -707,6 +719,79 @@ class DECATable(QTableWidget):
         row = rows[0].row()
         if row < len(self._rows):
             self._open_detail(self._rows[row].marquage)
+
+
+# ── Recherche globale ─────────────────────────────────────────────────────────
+
+class GlobalSearchDialog(QDialog):
+    def __init__(self, query: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Recherche : {query}")
+        self.resize(900, 500)
+        self._nav_args: tuple | None = None  # (module, pn)
+        self._setup_ui(query)
+
+    def _setup_ui(self, query: str):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
+
+        results = queries.global_search(query)
+        lbl = QLabel(f"<b>{len(results)}</b> résultat(s) pour « {query} »"
+                     + (" (limité à 100)" if len(results) == 100 else ""))
+        root.addWidget(lbl)
+
+        tbl = QTableWidget(len(results), 6)
+        tbl.setHorizontalHeaderLabels(["PN", "Marquage", "Modules", "Complexité", "Statut", "Action"])
+        tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        tbl.horizontalHeader().setStretchLastSection(True)
+        tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        tbl.verticalHeader().setVisible(False)
+        tbl.setShowGrid(True)
+        tbl.setColumnWidth(0, 130)
+        tbl.setColumnWidth(1, 130)
+        tbl.setColumnWidth(2, 200)
+        tbl.setColumnWidth(3, 100)
+        tbl.setColumnWidth(4, 90)
+        tbl.setColumnWidth(5, 90)
+
+        def _sel_item(text: str) -> QTableWidgetItem:
+            it = QTableWidgetItem(text or "")
+            it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            return it
+
+        for row_idx, r in enumerate(results):
+            modules = r["modules_effective"] or ""
+            first_module = modules.split(",")[0].strip()
+            pn = r["pn_short"] or ""
+            tbl.setItem(row_idx, 0, _sel_item(pn))
+            tbl.setItem(row_idx, 1, _sel_item(r["marquage"] or ""))
+            tbl.setItem(row_idx, 2, _sel_item(modules))
+            tbl.setItem(row_idx, 3, _sel_item(r["complexity_flag"] or ""))
+            statut = r["decision"] or "—"
+            stat_item = _sel_item(statut)
+            if statut == "VALIDÉ":
+                stat_item.setBackground(QColor(C_VALIDE))
+            elif statut == "EN ATTENTE":
+                stat_item.setBackground(QColor("#faeeda"))
+            tbl.setItem(row_idx, 4, stat_item)
+
+            if first_module and pn:
+                btn = QPushButton("→ Aller")
+                btn.setFixedHeight(26)
+                btn.clicked.connect(lambda _, m=first_module, p=pn: self._navigate(m, p))
+                tbl.setCellWidget(row_idx, 5, btn)
+
+        root.addWidget(tbl)
+
+        btn_close = QPushButton("Fermer")
+        btn_close.clicked.connect(self.close)
+        root.addWidget(btn_close, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def _navigate(self, module: str, pn: str):
+        self._nav_args = (module, pn)
+        self.accept()
 
 
 # ── Fenêtre principale ────────────────────────────────────────────────────────
@@ -756,6 +841,17 @@ class MainWindow(QMainWindow):
         )
         self.btn_mode.clicked.connect(self._toggle_mode)
         top.addWidget(self.btn_mode)
+        top.addSpacing(20)
+        self.search_global = QLineEdit()
+        self.search_global.setPlaceholderText("🔍 Recherche globale (PN / marquage)…")
+        self.search_global.setFixedWidth(260)
+        self.search_global.setFixedHeight(32)
+        self.search_global.returnPressed.connect(self._open_global_search)
+        top.addWidget(self.search_global)
+        btn_search = QPushButton("Rechercher")
+        btn_search.setFixedHeight(32)
+        btn_search.clicked.connect(self._open_global_search)
+        top.addWidget(btn_search)
         top.addStretch()
         btn_export_full = QPushButton("📋  Export complet du module")
         btn_export_full.setFixedHeight(32)
@@ -975,6 +1071,24 @@ class MainWindow(QMainWindow):
         total = len(self._pn_items)
         done  = sum(1 for it in self._pn_items if it.data(Qt.ItemDataRole.UserRole)["done"])
         self.lbl_stats.setText(f"{done} / {total} PNs traités")
+
+    def _open_global_search(self):
+        query = self.search_global.text().strip()
+        if not query:
+            return
+        dlg = GlobalSearchDialog(query, self)
+        dlg.exec()
+        if dlg._nav_args:
+            module, pn = dlg._nav_args
+            if module in MODULES:
+                self.cb_module.setCurrentText(module)
+            # Select the PN in the list
+            for i in range(self.pn_list.count()):
+                it = self.pn_list.item(i)
+                data = it.data(Qt.ItemDataRole.UserRole)
+                if data and data["pn"] == pn:
+                    self.pn_list.setCurrentItem(it)
+                    break
 
     # ── Navigation PN ─────────────────────────────────────────────────────────
 
