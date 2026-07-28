@@ -279,6 +279,16 @@ def get_complexity_stats_for_module(module: str) -> dict:
 # Global search
 # ---------------------------------------------------------------------------
 
+def get_source_info() -> dict:
+    """Retourne le fichier source et la date de chargement actuels."""
+    row = db.fetchone("""
+        SELECT source_file, source_format, loaded_at, COUNT(*) AS n_total
+        FROM tools
+        WHERE source_file IS NOT NULL
+    """)
+    return dict(row) if row and row["source_file"] else {}
+
+
 def global_search(query: str) -> list:
     """Recherche un PN ou un marquage dans tous les modules, toutes décisions."""
     q = f"%{query.strip().upper()}%"

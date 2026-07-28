@@ -974,6 +974,7 @@ class MainWindow(QMainWindow):
         self._expert_mode = False
         self._setup_ui()
         self._load_module(self._module)
+        self._update_source_tooltip()
         # Pré-charger l'index photos en arrière-plan
         self._preloader = _PhotoPreloader()
         self._preloader.start()
@@ -1022,11 +1023,11 @@ class MainWindow(QMainWindow):
         top.addStretch()
         btn_reload_src = QPushButton("⟳")
         btn_reload_src.setFixedSize(30, 30)
-        btn_reload_src.setToolTip("Recharger les fichiers sources DECA")
         btn_reload_src.setStyleSheet(
             "QPushButton { border:1px solid #bbb; border-radius:4px; color:#666; font-size:14px; }"
             "QPushButton:hover { background:#e8e8e8; color:#333; }"
         )
+        self._btn_reload_src = btn_reload_src
         btn_reload_src.clicked.connect(self._open_reload_sources)
         top.addWidget(btn_reload_src)
         top.addSpacing(8)
@@ -1258,10 +1259,25 @@ class MainWindow(QMainWindow):
         done  = sum(1 for it in self._pn_items if it.data(Qt.ItemDataRole.UserRole)["done"])
         self.lbl_stats.setText(f"{done} / {total} PNs traités")
 
+    def _update_source_tooltip(self):
+        info = queries.get_source_info()
+        if info and info.get("source_file"):
+            loaded = (info.get("loaded_at") or "")[:16].replace("T", " ")
+            tip = (
+                f"Source actuelle : {info['source_file']}\n"
+                f"Chargé le : {loaded} UTC\n"
+                f"Total DECAs : {info.get('n_total', '?')}\n\n"
+                "Cliquer pour recharger les sources…"
+            )
+        else:
+            tip = "Aucune source chargée — cliquer pour charger…"
+        self._btn_reload_src.setToolTip(tip)
+
     def _open_reload_sources(self):
         dlg = ReloadSourcesDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._load_module(self._module)
+            self._update_source_tooltip()
             self.statusBar().showMessage("Sources rechargées — module rafraîchi.", 5000)
 
     def _open_global_search(self):
