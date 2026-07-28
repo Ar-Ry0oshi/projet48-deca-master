@@ -3,6 +3,7 @@ DECA Manager — attribution des services, mode utilisateur.
 PyQt6 — tableau Excel-like par PN, fiche détail, photos, export XLSX.
 Partage decisions.db avec le dashboard Streamlit (lecture seule côté Streamlit).
 """
+import shutil
 import sys
 from pathlib import Path
 from functools import lru_cache
@@ -17,13 +18,13 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFileDialog, QAbstractItemView, QStatusBar,
     QDialog, QGridLayout, QScrollArea, QMenu, QFrame, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QThread
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPalette, QPixmap, QAction
 from PyQt6.QtWidgets import QCompleter
 
 import pandas as pd
 
-from config import MODULES, PHOTOS_DIR
+from config import MODULES, PHOTOS_DIR, DATA_DIR
 from db import queries
 from services import (
     svc3_labeled_options, svc3_from_label, svc3_label,
@@ -747,6 +748,146 @@ class DECATable(QTableWidget):
             self._open_detail(self._rows[row].marquage)
 
 
+# ── Reload sources ───────────────────────────────────────────────────────────
+
+class _ReloadThread(QThread):
+    finished = pyqtSignal(dict)
+    error    = pyqtSignal(str)
+
+    def run(self):
+        try:
+            from scripts.reload_sources import reload
+            stats = reload()
+            self.finished.emit(stats)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class ReloadSourcesDialog(QDialog):
+    """Permet de choisir de nouveaux fichiers sources, les copie dans data/ et relance le reload."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Recharger les sources DECA")
+        self.setFixedWidth(600)
+        self._paths: dict[str, Path | None] = {"deca": None, "panoply": None, "dmc": None, "icv": None}
+        self._thread: _ReloadThread | None = None
+        self._setup_ui()
+
+    def _setup_ui(self):
+        root = QVBoxLayout(self)
+        root.setSpacing(10)
+        root.setContentsMargins(16, 16, 16, 16)
+
+        intro = QLabel(
+            "Sélectionne un ou plusieurs nouveaux fichiers sources.\n"
+            "Seul le fichier DECA est obligatoire — les autres sont optionnels.\n"
+            "Les fichiers seront copiés dans <b>data/</b> avant le rechargement."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color:#444; margin-bottom:6px;")
+        root.addWidget(intro)
+
+        grid = QGridLayout()
+        grid.setSpacing(6)
+
+        sources = [
+            ("deca",    "Extract DECA *",  "CSV ou XLSX (*DECA* / *Extract*)"),
+            ("panoply", "Panoply",          "XLSX (Panoply*.xlsx)"),
+            ("dmc",     "DMC / ESM",        "XLSX (DMC*.xlsx / ESM*.xlsx)"),
+            ("icv",     "ICV Translation",  "XLSX (ICV*.xlsx / *Translation*.xlsx)"),
+        ]
+
+        self._lbl_file: dict[str, QLabel] = {}
+        for row_idx, (key, name, hint) in enumerate(sources):
+            lbl_name = QLabel(f"<b>{name}</b>")
+            lbl_hint = QLabel(hint)
+            lbl_hint.setStyleSheet("color:#888; font-size:11px;")
+            self._lbl_file[key] = QLabel("— aucun fichier sélectionné —")
+            self._lbl_file[key].setStyleSheet("color:#999; font-style:italic; font-size:11px;")
+            btn = QPushButton("Parcourir…")
+            btn.setFixedWidth(100)
+            btn.clicked.connect(lambda _, k=key: self._browse(k))
+
+            grid.addWidget(lbl_name,              row_idx * 2,     0)
+            grid.addWidget(btn,                   row_idx * 2,     1)
+            grid.addWidget(lbl_hint,              row_idx * 2 + 1, 0)
+            grid.addWidget(self._lbl_file[key],   row_idx * 2 + 1, 1)
+
+        root.addLayout(grid)
+
+        line = QFrame(); line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet("color:#ddd;")
+        root.addWidget(line)
+
+        self._lbl_status = QLabel("")
+        self._lbl_status.setWordWrap(True)
+        root.addWidget(self._lbl_status)
+
+        btn_row = QHBoxLayout()
+        self._btn_reload = QPushButton("⟳  Recharger")
+        self._btn_reload.setFixedHeight(34)
+        self._btn_reload.setStyleSheet(
+            "QPushButton { background:#0078d4; color:white; font-weight:bold; border-radius:4px; }"
+            "QPushButton:hover { background:#005fa3; }"
+            "QPushButton:disabled { background:#aaa; }"
+        )
+        self._btn_reload.clicked.connect(self._do_reload)
+        btn_cancel = QPushButton("Annuler")
+        btn_cancel.setFixedHeight(34)
+        btn_cancel.clicked.connect(self.reject)
+        btn_row.addWidget(self._btn_reload)
+        btn_row.addWidget(btn_cancel)
+        root.addLayout(btn_row)
+
+    def _browse(self, key: str):
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Sélectionner le fichier {key.upper()}",
+            "", "Fichiers source (*.csv *.xlsx *.xls)"
+        )
+        if path:
+            self._paths[key] = Path(path)
+            self._lbl_file[key].setText(Path(path).name)
+            self._lbl_file[key].setStyleSheet("color:#222; font-style:normal; font-size:11px;")
+
+    def _do_reload(self):
+        if not self._paths["deca"]:
+            QMessageBox.warning(self, "Fichier manquant", "Le fichier DECA est obligatoire.")
+            return
+
+        # Copie les fichiers sélectionnés dans data/
+        DATA_DIR.mkdir(exist_ok=True)
+        for key, src in self._paths.items():
+            if src:
+                dest = DATA_DIR / src.name
+                shutil.copy2(src, dest)
+
+        self._btn_reload.setEnabled(False)
+        self._lbl_status.setText("⏳  Rechargement en cours…")
+        self._lbl_status.setStyleSheet("color:#0078d4;")
+
+        self._thread = _ReloadThread()
+        self._thread.finished.connect(self._on_done)
+        self._thread.error.connect(self._on_error)
+        self._thread.start()
+
+    def _on_done(self, stats: dict):
+        self._lbl_status.setText(
+            f"✓  Rechargement terminé — {stats.get('total', '?')} DECAs chargés "
+            f"({stats.get('excluded', 0)} exclus)."
+        )
+        self._lbl_status.setStyleSheet("color:#1a7f37; font-weight:bold;")
+        self._btn_reload.setEnabled(True)
+        self._btn_reload.setText("Fermer")
+        self._btn_reload.clicked.disconnect()
+        self._btn_reload.clicked.connect(self.accept)
+
+    def _on_error(self, msg: str):
+        self._lbl_status.setText(f"✗  Erreur : {msg}")
+        self._lbl_status.setStyleSheet("color:#c0392b; font-weight:bold;")
+        self._btn_reload.setEnabled(True)
+
+
 # ── Recherche globale ─────────────────────────────────────────────────────────
 
 class GlobalSearchDialog(QDialog):
@@ -879,6 +1020,16 @@ class MainWindow(QMainWindow):
         btn_search.clicked.connect(self._open_global_search)
         top.addWidget(btn_search)
         top.addStretch()
+        btn_reload_src = QPushButton("⟳")
+        btn_reload_src.setFixedSize(30, 30)
+        btn_reload_src.setToolTip("Recharger les fichiers sources DECA")
+        btn_reload_src.setStyleSheet(
+            "QPushButton { border:1px solid #bbb; border-radius:4px; color:#666; font-size:14px; }"
+            "QPushButton:hover { background:#e8e8e8; color:#333; }"
+        )
+        btn_reload_src.clicked.connect(self._open_reload_sources)
+        top.addWidget(btn_reload_src)
+        top.addSpacing(8)
         btn_export_full = QPushButton("📋  Export complet du module")
         btn_export_full.setFixedHeight(32)
         btn_export_full.setToolTip("Exporte TOUS les DECAs (validés, en attente, sans décision) avec statut, horodatage et commentaire")
@@ -1106,6 +1257,12 @@ class MainWindow(QMainWindow):
         total = len(self._pn_items)
         done  = sum(1 for it in self._pn_items if it.data(Qt.ItemDataRole.UserRole)["done"])
         self.lbl_stats.setText(f"{done} / {total} PNs traités")
+
+    def _open_reload_sources(self):
+        dlg = ReloadSourcesDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._load_module(self._module)
+            self.statusBar().showMessage("Sources rechargées — module rafraîchi.", 5000)
 
     def _open_global_search(self):
         query = self.search_global.text().strip()
