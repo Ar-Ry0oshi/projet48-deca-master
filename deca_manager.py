@@ -748,6 +748,233 @@ class DECATable(QTableWidget):
             self._open_detail(self._rows[row].marquage)
 
 
+# ── Application en masse ─────────────────────────────────────────────────────
+
+class BatchApplyDialog(QDialog):
+    """Applique N.Service 3/4 à une sélection de PNs du module en une opération."""
+
+    def __init__(self, module: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Application en masse — {module}")
+        self.resize(560, 680)
+        self._module = module
+        self._svc3_opts = svc3_labeled_options()
+        self._setup_ui()
+
+    def _setup_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 14, 14, 14)
+        root.setSpacing(10)
+
+        # ── Service pickers ───────────────────────────────────────────────
+        svc_box = QFrame()
+        svc_box.setStyleSheet("background:#f0f4fa; border-radius:6px; padding:4px;")
+        svc_lay = QGridLayout(svc_box)
+        svc_lay.setSpacing(6)
+
+        svc_lay.addWidget(QLabel("<b>N.Service 3</b>"), 0, 0)
+        self.cb_svc3 = DECATable._make_combo(self._svc3_opts)
+        self.cb_svc3.setMinimumWidth(300)
+        svc_lay.addWidget(self.cb_svc3, 0, 1)
+
+        svc_lay.addWidget(QLabel("<b>N.Service 4</b>"), 1, 0)
+        self.cb_svc4 = DECATable._make_combo([])
+        svc_lay.addWidget(self.cb_svc4, 1, 1)
+
+        self.cb_svc3.currentTextChanged.connect(self._on_svc3_change)
+        root.addWidget(svc_box)
+
+        # ── Mode (pré-remplir vs valider) ─────────────────────────────────
+        from PyQt6.QtWidgets import QRadioButton, QButtonGroup
+        mode_lay = QHBoxLayout()
+        self._rb_encours = QRadioButton("Pré-remplir seulement (EN COURS)")
+        self._rb_valide  = QRadioButton("Valider directement (VALIDÉ)")
+        self._rb_encours.setChecked(True)
+        grp = QButtonGroup(self)
+        grp.addButton(self._rb_encours)
+        grp.addButton(self._rb_valide)
+        mode_lay.addWidget(self._rb_encours)
+        mode_lay.addWidget(self._rb_valide)
+        root.addLayout(mode_lay)
+
+        # ── Filtre + sélection rapide ──────────────────────────────────────
+        sel_lay = QHBoxLayout()
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Filtrer les PNs…")
+        self._search.setFixedHeight(26)
+        self._search.textChanged.connect(self._filter_pns)
+        sel_lay.addWidget(self._search, stretch=1)
+        btn_all   = QPushButton("Tout cocher")
+        btn_none  = QPushButton("Tout décocher")
+        btn_untreated = QPushButton("Non traités seulement")
+        for b in (btn_all, btn_none, btn_untreated):
+            b.setFixedHeight(26)
+            b.setStyleSheet("font-size:11px;")
+        btn_all.clicked.connect(lambda: self._check_all(True))
+        btn_none.clicked.connect(lambda: self._check_all(False))
+        btn_untreated.clicked.connect(self._check_untreated)
+        sel_lay.addWidget(btn_all)
+        sel_lay.addWidget(btn_none)
+        sel_lay.addWidget(btn_untreated)
+        root.addLayout(sel_lay)
+
+        # ── Liste PNs avec cases à cocher ─────────────────────────────────
+        self._pn_list = QListWidget()
+        self._pn_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        root.addWidget(self._pn_list, stretch=1)
+
+        self._lbl_count = QLabel("")
+        self._lbl_count.setStyleSheet("color:#666; font-size:11px;")
+        root.addWidget(self._lbl_count)
+
+        # ── Boutons ───────────────────────────────────────────────────────
+        self._lbl_result = QLabel("")
+        self._lbl_result.setWordWrap(True)
+        root.addWidget(self._lbl_result)
+
+        btn_row = QHBoxLayout()
+        self._btn_apply = QPushButton("⚡  Appliquer")
+        self._btn_apply.setFixedHeight(34)
+        self._btn_apply.setStyleSheet(
+            "QPushButton { background:#0078d4; color:white; font-weight:bold; border-radius:4px; }"
+            "QPushButton:hover { background:#005fa3; }"
+        )
+        self._btn_apply.clicked.connect(self._apply)
+        btn_cancel = QPushButton("Fermer")
+        btn_cancel.setFixedHeight(34)
+        btn_cancel.clicked.connect(self.accept)
+        btn_row.addWidget(self._btn_apply)
+        btn_row.addWidget(btn_cancel)
+        root.addLayout(btn_row)
+
+        self._load_pns()
+
+    def _load_pns(self):
+        self._pn_list.clear()
+        all_tools  = queries.get_tools_for_module(self._module)
+        decisions  = queries.get_decisions_batch_for_module(self._module)
+
+        pn_data: dict[str, dict] = {}
+        for r in all_tools:
+            pn = r["pn_short"]
+            if pn not in pn_data:
+                pn_data[pn] = {"marquages": [], "complexity": r["complexity_flag"] or "unique"}
+            pn_data[pn]["marquages"].append(r["marquage"])
+
+        self._pn_meta: dict[str, dict] = {}
+        for pn, d in sorted(pn_data.items()):
+            mqs = d["marquages"]
+            statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
+            done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+            self._pn_meta[pn] = {"marquages": mqs, "done": done, "complexity": d["complexity"]}
+
+            item = QListWidgetItem()
+            item.setCheckState(Qt.CheckState.Unchecked)
+            n_deca = len(mqs)
+            status_hint = "✓ traité" if done else "à traiter"
+            item.setText(f"{pn}  ({n_deca} DECA{'s' if n_deca > 1 else ''})  — {status_hint}")
+            item.setData(Qt.ItemDataRole.UserRole, pn)
+            if done:
+                item.setForeground(QColor("#888"))
+            self._pn_list.addItem(item)
+
+        self._update_count()
+
+    def _on_svc3_change(self, label: str):
+        svc3_plain, svc1 = svc3_from_label(label)
+        opts = svc4_labeled_for_bld(svc1, svc3_plain) if svc1 else [""]
+        self.cb_svc4.blockSignals(True)
+        self.cb_svc4.clear()
+        self.cb_svc4.addItems(opts)
+        completer = QCompleter(opts)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.cb_svc4.setCompleter(completer)
+        self.cb_svc4.blockSignals(False)
+
+    def _filter_pns(self, text: str):
+        text = text.upper()
+        for i in range(self._pn_list.count()):
+            item = self._pn_list.item(i)
+            pn = item.data(Qt.ItemDataRole.UserRole) or ""
+            item.setHidden(bool(text) and text not in pn.upper())
+
+    def _check_all(self, checked: bool):
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        for i in range(self._pn_list.count()):
+            item = self._pn_list.item(i)
+            if not item.isHidden():
+                item.setCheckState(state)
+        self._update_count()
+
+    def _check_untreated(self):
+        for i in range(self._pn_list.count()):
+            item = self._pn_list.item(i)
+            if item.isHidden():
+                continue
+            pn = item.data(Qt.ItemDataRole.UserRole)
+            done = self._pn_meta.get(pn, {}).get("done", False)
+            item.setCheckState(Qt.CheckState.Unchecked if done else Qt.CheckState.Checked)
+        self._update_count()
+
+    def _update_count(self):
+        n = sum(1 for i in range(self._pn_list.count())
+                if self._pn_list.item(i).checkState() == Qt.CheckState.Checked)
+        self._lbl_count.setText(f"{n} PN(s) sélectionné(s)")
+
+    def _apply(self):
+        svc3_lbl = self.cb_svc3.currentText().strip()
+        if not svc3_lbl:
+            QMessageBox.warning(self, "Service manquant", "Sélectionne d'abord un N.Service 3.")
+            return
+
+        svc3_plain, svc1 = svc3_from_label(svc3_lbl)
+        svc4_lbl   = self.cb_svc4.currentText().strip()
+        svc4_plain = svc4_from_label(svc4_lbl) if svc4_lbl else ""
+        svc2s      = svc2_for_svc3(svc3_plain) if svc3_plain else []
+        svc2       = svc2s[0] if svc2s else ""
+        decision   = "VALIDÉ" if self._rb_valide.isChecked() else "EN COURS"
+
+        selected_pns = [
+            self._pn_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(self._pn_list.count())
+            if self._pn_list.item(i).checkState() == Qt.CheckState.Checked
+        ]
+
+        if not selected_pns:
+            QMessageBox.information(self, "Rien à faire", "Aucun PN sélectionné.")
+            return
+
+        n_deca = 0
+        for pn in selected_pns:
+            for marquage in self._pn_meta[pn]["marquages"]:
+                queries.upsert_decision(
+                    marquage       = marquage,
+                    pn_short       = pn,
+                    module_context = self._module,
+                    n_service1     = svc1 or None,
+                    n_service2     = svc2 or None,
+                    n_service3     = svc3_plain or None,
+                    n_service4     = svc4_plain or None,
+                    pre_check      = None,
+                    decision       = decision,
+                    commentaire    = None,
+                    updated_by     = "manager_batch",
+                )
+                n_deca += 1
+
+        verb = "validés" if decision == "VALIDÉ" else "pré-remplis"
+        self._lbl_result.setText(
+            f"✓  {n_deca} DECA(s) sur {len(selected_pns)} PN(s) {verb} "
+            f"avec N.Service 3 = {svc3_plain}."
+        )
+        self._lbl_result.setStyleSheet("color:#1a7f37; font-weight:bold;")
+        self._load_pns()
+        if isinstance(self.parent(), MainWindow):
+            self.parent()._reload_pn_list()
+            self.parent()._update_stats()
+
+
 # ── Reload sources ───────────────────────────────────────────────────────────
 
 class _ReloadThread(QThread):
@@ -1068,6 +1295,12 @@ class MainWindow(QMainWindow):
         self.pn_list = QListWidget()
         self.pn_list.currentItemChanged.connect(self._on_pn_selected)
         ll.addWidget(self.pn_list)
+        btn_batch = QPushButton("⚡  Appliquer en masse…")
+        btn_batch.setFixedHeight(28)
+        btn_batch.setStyleSheet("font-size:11px; color:#444;")
+        btn_batch.setToolTip("Appliquer N.Service 3/4 à une sélection de PNs en une seule opération")
+        btn_batch.clicked.connect(self._open_batch_apply)
+        ll.addWidget(btn_batch)
 
         # Panneau droit
         right = QWidget()
@@ -1272,6 +1505,10 @@ class MainWindow(QMainWindow):
         else:
             tip = "Aucune source chargée — cliquer pour charger…"
         self._btn_reload_src.setToolTip(tip)
+
+    def _open_batch_apply(self):
+        dlg = BatchApplyDialog(self._module, self)
+        dlg.exec()
 
     def _open_reload_sources(self):
         dlg = ReloadSourcesDialog(self)
