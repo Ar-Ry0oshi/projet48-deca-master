@@ -458,6 +458,7 @@ class DECATable(QTableWidget):
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.horizontalHeader().setStretchLastSection(False)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.verticalHeader().setVisible(False)
         self.setShowGrid(True)
@@ -489,10 +490,20 @@ class DECATable(QTableWidget):
         drow = self._rows[index.row()]
         menu = QMenu(self)
 
+        selected_rows = sorted({idx.row() for idx in self.selectedIndexes()
+                                if idx.row() < len(self._rows)})
+        n_sel = sum(1 for r in selected_rows if not self._rows[r].locked and self._rows[r] is not drow)
+
         if not drow.locked:
-            act_copy = menu.addAction("↓  Appliquer N.Service 3/4 à toutes les lignes")
+            act_copy_sel = menu.addAction(
+                f"↓  Appliquer N.Service 3/4 aux {n_sel} ligne(s) sélectionnée(s)"
+                if n_sel else "↓  Appliquer N.Service 3/4 aux lignes sélectionnées"
+            )
+            act_copy_sel.setEnabled(n_sel > 0)
+            act_copy_all = menu.addAction("↓  Appliquer N.Service 3/4 à toutes les lignes")
         else:
-            act_copy = None
+            act_copy_sel = None
+            act_copy_all = None
 
         act_unlock = menu.addAction("🔓  Déverrouiller cette ligne")
         if not drow.locked:
@@ -502,7 +513,13 @@ class DECATable(QTableWidget):
         if not chosen:
             return
 
-        if chosen is act_copy:
+        if chosen is act_copy_sel:
+            target_rows = [self._rows[r] for r in selected_rows
+                           if self._rows[r] is not drow and not self._rows[r].locked]
+            self.apply_svc3_to_rows(drow, target_rows)
+            return
+
+        if chosen is act_copy_all:
             self.apply_svc3_to_all(drow)
             return
 
@@ -695,12 +712,11 @@ class DECATable(QTableWidget):
             })
         return result
 
-    def apply_svc3_to_all(self, source_drow: DECARow):
-        """Copie N.Service 3 et 4 de source_drow vers toutes les lignes non verrouillées."""
+    def apply_svc3_to_rows(self, source_drow: DECARow, targets: list):
         svc3_txt = source_drow.combo_svc3.currentText() if source_drow.combo_svc3 else ""
         svc4_txt = source_drow.combo_svc4.currentText() if source_drow.combo_svc4 else ""
-        for drow in self._rows:
-            if drow is source_drow or drow.locked or not drow.combo_svc3:
+        for drow in targets:
+            if not drow.combo_svc3:
                 continue
             idx3 = drow.combo_svc3.findText(svc3_txt)
             if idx3 >= 0:
@@ -709,6 +725,10 @@ class DECATable(QTableWidget):
                 idx4 = drow.combo_svc4.findText(svc4_txt)
                 if idx4 >= 0:
                     drow.combo_svc4.setCurrentIndex(idx4)
+
+    def apply_svc3_to_all(self, source_drow: DECARow):
+        targets = [d for d in self._rows if d is not source_drow and not d.locked]
+        self.apply_svc3_to_rows(source_drow, targets)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_C and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
