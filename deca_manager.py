@@ -32,9 +32,11 @@ from services import (
 )
 
 # ── Couleurs ──────────────────────────────────────────────────────────────────
-C_VALIDE   = "#d4edda"
-C_EN_COURS = "#ffffff"
-C_LOCKED   = "#f0f0f0"
+C_VALIDE    = "#d4edda"   # vert clair — table DECA
+C_PN_VALIDE = "#6dbf7e"   # vert intense — liste PN (tout VALIDÉ)
+C_PN_PCHECK = "#fce8b2"   # jaune orangé — liste PN (EN ATTENTE / pré-checké)
+C_EN_COURS  = "#ffffff"
+C_LOCKED    = "#f0f0f0"
 
 # ── Index colonnes ────────────────────────────────────────────────────────────
 COL_MARQ     = 0
@@ -1032,12 +1034,21 @@ class MainWindow(QMainWindow):
             for pn in pns_in_group:
                 mqs = pn_data[pn]["marquages"]
                 statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
-                done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+                all_valide  = bool(statuses) and all(s == "VALIDÉ"    for s in statuses)
+                all_done    = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+                any_pcheck  = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_valide
+                done = all_done
                 count = len(mqs)
-                label_pn = f"{'✓' if done else ' '}  {pn}  ({count})"
+                icon = "✓" if all_valide else ("◑" if any_pcheck else " ")
+                label_pn = f"{icon}  {pn}  ({count})"
                 item = QListWidgetItem(label_pn)
                 item.setData(Qt.ItemDataRole.UserRole, {"pn": pn, "done": done})
-                item.setBackground(QColor(C_VALIDE if done else C_EN_COURS))
+                if all_valide:
+                    item.setBackground(QColor(C_PN_VALIDE))
+                elif any_pcheck:
+                    item.setBackground(QColor(C_PN_PCHECK))
+                else:
+                    item.setBackground(QColor(C_EN_COURS))
                 self.pn_list.addItem(item)
                 self._pn_items.append(item)
 
