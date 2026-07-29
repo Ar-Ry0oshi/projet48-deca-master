@@ -18,8 +18,8 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFileDialog, QAbstractItemView, QStatusBar,
     QDialog, QGridLayout, QScrollArea, QMenu, QFrame, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPalette, QPixmap, QAction
+from PyQt6.QtCore import Qt, QThread, QObject, QEvent, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QPalette, QPixmap, QAction, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QCompleter
 
 import pandas as pd
@@ -421,6 +421,57 @@ class ColumnFilterBar(QWidget):
             self._table.setRowHidden(row, not visible)
 
 
+# ── Filtre clavier pour les cellules éditables ────────────────────────────────
+
+class _CellKeyFilter(QObject):
+    """Intercepte les raccourcis clavier dans les combos/lineedits de la table."""
+
+    def __init__(self, table, row_idx: int, col: int):
+        super().__init__(table)
+        self._table = table
+        self._row_idx = row_idx
+        self._col = col
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.KeyPress:
+            return False
+        key  = event.key()
+        mods = event.modifiers()
+        ctrl  = Qt.KeyboardModifier.ControlModifier
+        shift = Qt.KeyboardModifier.ShiftModifier
+        alt   = Qt.KeyboardModifier.AltModifier
+
+        # Alt+↓ / Alt+↑ → ligne DECA suivante / précédente
+        if mods == alt:
+            if key == Qt.Key.Key_Down:
+                self._table._move_row(self._row_idx + 1)
+                return True
+            if key == Qt.Key.Key_Up:
+                self._table._move_row(self._row_idx - 1)
+                return True
+
+        # Ctrl+Shift+D → appliquer à toutes les lignes
+        if mods == (ctrl | shift) and key == Qt.Key.Key_D:
+            if self._row_idx < len(self._table._rows):
+                self._table.apply_svc3_to_all(self._table._rows[self._row_idx])
+            return True
+
+        # Ctrl+D → fill down (copier ligne au-dessus)
+        if mods == ctrl and key == Qt.Key.Key_D:
+            self._table._fill_down(self._row_idx)
+            return True
+
+        # Tab → ordre personnalisé svc3 → svc4 → comm → svc3 ligne suivante
+        if key == Qt.Key.Key_Tab and not mods:
+            self._table._tab_next(self._row_idx, self._col)
+            return True
+        if key == Qt.Key.Key_Backtab:
+            self._table._tab_prev(self._row_idx, self._col)
+            return True
+
+        return False
+
+
 # ── Ligne DECA ────────────────────────────────────────────────────────────────
 
 class DECARow:
@@ -636,6 +687,13 @@ class DECATable(QTableWidget):
 
         cb3.currentTextChanged.connect(lambda txt, d=drow: self._on_svc3_change(txt, d))
 
+        # Raccourcis clavier dans les cellules éditables
+        row_idx = len(self._rows) - 1
+        for widget, col in ((cb3, COL_NSVC3), (cb4, COL_NSVC4), (ed, COL_COMM)):
+            filt = _CellKeyFilter(self, row_idx, col)
+            target = widget.lineEdit() if isinstance(widget, QComboBox) else widget
+            target.installEventFilter(filt)
+
         self.setCellWidget(r, COL_NSVC3,    cb3)
         self.setCellWidget(r, COL_NSVC4,    cb4)
         self.setCellWidget(r, COL_COMM,     ed)
@@ -738,6 +796,70 @@ class DECATable(QTableWidget):
                 QApplication.clipboard().setText(selected[0].text())
             return
         super().keyPressEvent(event)
+
+    def _move_row(self, target: int):
+        if 0 <= target < self.rowCount():
+            self.selectRow(target)
+            if target < len(self._rows):
+                drow = self._rows[target]
+                w = drow.combo_svc3 or drow.combo_svc4 or drow.edit_comm
+                if w:
+                    w.setFocus()
+
+    def _fill_down(self, row_idx: int):
+        """Copie N.Service 3/4 de la ligne au-dessus."""
+        if row_idx <= 0 or row_idx >= len(self._rows):
+            return
+        src = self._rows[row_idx - 1]
+        dst = self._rows[row_idx]
+        if dst.locked or not dst.combo_svc3 or not src.combo_svc3:
+            return
+        for txt, cb_src, cb_dst in (
+            (src.combo_svc3.currentText(), src.combo_svc3, dst.combo_svc3),
+            (src.combo_svc4.currentText() if src.combo_svc4 else "", src.combo_svc4, dst.combo_svc4),
+        ):
+            if cb_dst and txt:
+                idx = cb_dst.findText(txt)
+                if idx >= 0:
+                    cb_dst.setCurrentIndex(idx)
+
+    def _tab_next(self, row_idx: int, col: int):
+        if row_idx >= len(self._rows):
+            return
+        drow = self._rows[row_idx]
+        if col == COL_NSVC3 and drow.combo_svc4:
+            drow.combo_svc4.setFocus()
+            drow.combo_svc4.lineEdit().selectAll()
+        elif col == COL_NSVC4 and drow.edit_comm:
+            drow.edit_comm.setFocus()
+            drow.edit_comm.selectAll()
+        elif col == COL_COMM:
+            for nxt in range(row_idx + 1, len(self._rows)):
+                nd = self._rows[nxt]
+                if not nd.locked and nd.combo_svc3:
+                    self.selectRow(nxt)
+                    nd.combo_svc3.setFocus()
+                    nd.combo_svc3.lineEdit().selectAll()
+                    return
+
+    def _tab_prev(self, row_idx: int, col: int):
+        if row_idx >= len(self._rows):
+            return
+        drow = self._rows[row_idx]
+        if col == COL_NSVC4 and drow.combo_svc3:
+            drow.combo_svc3.setFocus()
+            drow.combo_svc3.lineEdit().selectAll()
+        elif col == COL_COMM and drow.combo_svc4:
+            drow.combo_svc4.setFocus()
+            drow.combo_svc4.lineEdit().selectAll()
+        elif col == COL_NSVC3:
+            for prv in range(row_idx - 1, -1, -1):
+                pd = self._rows[prv]
+                if not pd.locked and pd.edit_comm:
+                    self.selectRow(prv)
+                    pd.edit_comm.setFocus()
+                    pd.edit_comm.selectAll()
+                    return
 
     def open_detail_for_selected(self):
         rows = self.selectionModel().selectedRows()
@@ -1532,6 +1654,7 @@ class MainWindow(QMainWindow):
         self._current_pn: str | None = None
         self._pn_items: list[QListWidgetItem] = []
         self._expert_mode = False
+        self._last_validated_pn: str | None = None
         self._setup_ui()
         self._load_module(self._module)
         self._update_source_tooltip()
@@ -1695,6 +1818,13 @@ class MainWindow(QMainWindow):
         splitter.setSizes([300, 1100])
         root.addWidget(splitter)
         self.setStatusBar(QStatusBar())
+
+        # ── Raccourcis clavier ────────────────────────────────────────────
+        QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(self._valider)
+        QShortcut(QKeySequence("Ctrl+Z"),      self).activated.connect(self._undo)
+        QShortcut(QKeySequence("Ctrl+Down"),   self).activated.connect(self._next_pn)
+        QShortcut(QKeySequence("Ctrl+Up"),     self).activated.connect(self._prev_pn)
+        QShortcut(QKeySequence("F2"),          self).activated.connect(self.table.open_detail_for_selected)
 
     # ── Mode Expert/Utilisateur ───────────────────────────────────────────────
 
@@ -1905,6 +2035,66 @@ class MainWindow(QMainWindow):
                         return
                 break
 
+    def _prev_pn(self):
+        for i in range(self.pn_list.count() - 1, -1, -1):
+            it = self.pn_list.item(i)
+            if it.isHidden() or it.data(Qt.ItemDataRole.UserRole) is None:
+                continue
+            if it.data(Qt.ItemDataRole.UserRole)["pn"] == self._current_pn:
+                for j in range(i - 1, -1, -1):
+                    prv = self.pn_list.item(j)
+                    if not prv.isHidden() and prv.data(Qt.ItemDataRole.UserRole) is not None:
+                        self.pn_list.setCurrentItem(prv)
+                        return
+                break
+
+    def _refresh_pn_item(self, pn: str, decision_val: str):
+        """Met à jour uniquement l'item PN concerné — sans reconstruire toute la liste."""
+        decs = queries.get_decisions_for_pn_in_module(pn, self._module)
+        statuses = [r["decision"] for r in decs if r["decision"]]
+        all_valide = bool(statuses) and all(s == "VALIDÉ" for s in statuses)
+        any_pcheck = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_valide
+        done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+        count = len(decs)
+
+        for item in self._pn_items:
+            data = item.data(Qt.ItemDataRole.UserRole)
+            if not data or data["pn"] != pn:
+                continue
+            data["done"] = done
+            item.setData(Qt.ItemDataRole.UserRole, data)
+            icon = "✓" if all_valide else ("◑" if any_pcheck else " ")
+            item.setText(f"{icon}  {pn}  ({count})")
+            if all_valide:
+                item.setBackground(QColor(C_PN_VALIDE))
+            elif any_pcheck:
+                item.setBackground(QColor(C_PN_PCHECK))
+            else:
+                item.setBackground(QColor(C_EN_COURS))
+            break
+
+        done_count = sum(1 for it in self._pn_items
+                        if (d := it.data(Qt.ItemDataRole.UserRole)) and d.get("done"))
+        self.lbl_stats.setText(f"{done_count} / {len(self._pn_items)} PNs traités")
+
+    def _undo(self):
+        """Ctrl+Z : délègue au widget focalisé si possible, sinon annule la dernière validation."""
+        focused = QApplication.focusWidget()
+        if isinstance(focused, QLineEdit) and focused.isUndoAvailable():
+            focused.undo()
+            return
+        if not self._last_validated_pn:
+            self.statusBar().showMessage("Rien à annuler.", 2000)
+            return
+        pn = self._last_validated_pn
+        all_tools = queries.get_tools_for_module(self._module)
+        for r in all_tools:
+            if r["pn_short"] == pn:
+                queries.reset_decision(r["marquage"], reset_by="manager_undo")
+        self._last_validated_pn = None
+        self._refresh_pn_item(pn, "EN COURS")
+        self.statusBar().showMessage(f"↩  Annulé : {pn} remis en EN COURS.", 3000)
+
     # ── Validation ────────────────────────────────────────────────────────────
 
     def _valider(self):
@@ -1928,7 +2118,12 @@ class MainWindow(QMainWindow):
 
         decision_val = "EN ATTENTE" if self._expert_mode else "VALIDÉ"
         updated_by   = "manager_expert" if self._expert_mode else "manager_user"
+        saved_pn     = self._current_pn
 
+        # Naviguer IMMÉDIATEMENT vers le PN suivant (affichage sans délai)
+        self._next_pn()
+
+        # Écriture en DB (SQLite rapide, quelques ms)
         for f in forms:
             existing = queries.get_decision(f["marquage"])
             if existing and existing["decision"] == "EN ATTENTE":
@@ -1947,13 +2142,14 @@ class MainWindow(QMainWindow):
                 updated_by     = updated_by,
             )
 
+        # Mise à jour ciblée de l'item PN (pas de reconstruction complète)
+        self._refresh_pn_item(saved_pn, decision_val)
+        self._last_validated_pn = saved_pn
+
         label = "mis en attente" if self._expert_mode else "validé(s)"
         self.statusBar().showMessage(
-            f"{'📋' if self._expert_mode else '✓'}  {len(forms)} DECA(s) {label} pour {self._current_pn}.", 4000
+            f"{'📋' if self._expert_mode else '✓'}  {len(forms)} DECA(s) {label} pour {saved_pn}.", 4000
         )
-        self._reload_pn_list()
-        self._update_stats()
-        self._next_pn()
 
     # ── Export ────────────────────────────────────────────────────────────────
 

@@ -289,6 +289,15 @@ def get_source_info() -> dict:
     return dict(row) if row and row["source_file"] else {}
 
 
+def get_decisions_for_pn_in_module(pn_short: str, module: str) -> list:
+    """Statuts des DECAs d'un PN dans un module — pour refresh ciblé de l'item PN."""
+    return db.fetchall("""
+        SELECT d.decision FROM tools t
+        LEFT JOIN decisions d ON d.marquage = t.marquage
+        WHERE t.pn_short = ? AND t.modules_effective LIKE ? AND t.is_excluded = 0
+    """, (pn_short, f"%{module}%"))
+
+
 def global_search(query: str) -> list:
     """Recherche un PN ou un marquage dans tous les modules, toutes décisions."""
     q = f"%{query.strip().upper()}%"
