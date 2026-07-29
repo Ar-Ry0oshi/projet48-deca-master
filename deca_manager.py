@@ -748,6 +748,339 @@ class DECATable(QTableWidget):
             self._open_detail(self._rows[row].marquage)
 
 
+# ── Vue rapide (sprint) ───────────────────────────────────────────────────────
+
+class SprintViewDialog(QDialog):
+    """Tableau plat de tous les DECAs des PNs simples — remplissage & validation rapide."""
+
+    # Colonnes internes
+    _C_PN    = 0
+    _C_MARQ  = 1
+    _C_REF   = 2
+    _C_SVC3C = 3   # service3 actuel
+    _C_SVC1C = 4
+    _C_NSVC3 = 5   # combo N.Service3
+    _C_NSVC4 = 6   # combo N.Service4
+    _C_COMM  = 7
+    _C_STAT  = 8
+    _HEADERS = ["PN", "Marquage", "Réf", "Svc 3 actuel", "Svc 1 actuel",
+                "N.Service 3", "N.Service 4", "Commentaire", "Statut"]
+    _WIDTHS  = [130, 110, 130, 130, 110, 210, 210, 150, 80]
+
+    def __init__(self, module: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Vue rapide — {module}")
+        self.resize(1300, 700)
+        self._module = module
+        self._svc3_opts = svc3_labeled_options()
+        self._drows: list[DECARow] = []
+        self._setup_ui()
+        self._load(max_deca=self._spin.value())
+
+    def _setup_ui(self):
+        from PyQt6.QtWidgets import QSpinBox
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        # ── Barre de contrôle ─────────────────────────────────────────────
+        bar = QHBoxLayout()
+        bar.addWidget(QLabel("PNs avec au maximum"))
+        self._spin = QSpinBox()
+        self._spin.setRange(1, 20)
+        self._spin.setValue(3)
+        self._spin.setFixedWidth(55)
+        bar.addWidget(self._spin)
+        bar.addWidget(QLabel("DECAs"))
+        btn_load = QPushButton("Charger")
+        btn_load.setFixedHeight(28)
+        btn_load.clicked.connect(lambda: self._load(self._spin.value()))
+        bar.addWidget(btn_load)
+        bar.addSpacing(20)
+        self._lbl_info = QLabel("")
+        self._lbl_info.setStyleSheet("color:#555;")
+        bar.addWidget(self._lbl_info)
+        bar.addStretch()
+
+        # Filtres rapides
+        self._search = QLineEdit()
+        self._search.setPlaceholderText("Filtrer PN / marquage…")
+        self._search.setFixedWidth(180)
+        self._search.setFixedHeight(28)
+        self._search.textChanged.connect(self._filter_rows)
+        bar.addWidget(self._search)
+
+        btn_apply_all = QPushButton("↓  Appliquer svc3/4 à toutes les lignes visibles")
+        btn_apply_all.setFixedHeight(28)
+        btn_apply_all.setToolTip("Copie N.Service 3/4 de la ligne sélectionnée vers toutes les lignes visibles non verrouillées")
+        btn_apply_all.clicked.connect(self._apply_selected_to_all)
+        bar.addWidget(btn_apply_all)
+        root.addLayout(bar)
+
+        # ── Table ─────────────────────────────────────────────────────────
+        self._table = QTableWidget()
+        self._table.setColumnCount(len(self._HEADERS))
+        self._table.setHorizontalHeaderLabels(self._HEADERS)
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.verticalHeader().setVisible(False)
+        self._table.setShowGrid(True)
+        self._table.setAlternatingRowColors(False)
+        for col, w in enumerate(self._WIDTHS):
+            self._table.setColumnWidth(col, w)
+        self._table.horizontalHeader().setStyleSheet(
+            "QHeaderView::section { background:#dce6f1; font-weight:bold; padding:4px; border:1px solid #bbb; }"
+        )
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._row_menu)
+        root.addWidget(self._table, stretch=1)
+
+        # ── Boutons bas ───────────────────────────────────────────────────
+        bot = QHBoxLayout()
+        self._lbl_status = QLabel("")
+        self._lbl_status.setStyleSheet("color:#1a7f37; font-weight:bold;")
+        bot.addWidget(self._lbl_status, stretch=1)
+
+        btn_valide = QPushButton("✓  Valider tout le visible")
+        btn_valide.setFixedHeight(34)
+        btn_valide.setStyleSheet(
+            "QPushButton { background:#21c354; color:white; font-weight:bold; border-radius:4px; }"
+            "QPushButton:hover { background:#1aad47; }"
+        )
+        btn_valide.clicked.connect(lambda: self._validate_visible("VALIDÉ"))
+
+        btn_attente = QPushButton("📋  Pré-checker tout le visible")
+        btn_attente.setFixedHeight(34)
+        btn_attente.setStyleSheet(
+            "QPushButton { background:#1f497d; color:white; font-weight:bold; border-radius:4px; }"
+            "QPushButton:hover { background:#163a69; }"
+        )
+        btn_attente.clicked.connect(lambda: self._validate_visible("EN ATTENTE"))
+
+        btn_close = QPushButton("Fermer")
+        btn_close.setFixedHeight(34)
+        btn_close.clicked.connect(self.accept)
+
+        bot.addWidget(btn_attente)
+        bot.addWidget(btn_valide)
+        bot.addWidget(btn_close)
+        root.addLayout(bot)
+
+    def _load(self, max_deca: int):
+        self._table.setSortingEnabled(False)
+        self._table.setRowCount(0)
+        self._drows.clear()
+
+        all_tools = queries.get_tools_for_module(self._module)
+        decisions = queries.get_decisions_batch_for_module(self._module)
+
+        # Groupe par PN, garde ceux avec ≤ max_deca DECAs
+        pn_tools: dict[str, list] = {}
+        for r in all_tools:
+            pn = r["pn_short"]
+            pn_tools.setdefault(pn, []).append(dict(r))
+
+        eligible = {pn: rows for pn, rows in pn_tools.items() if len(rows) <= max_deca}
+        n_pn  = len(eligible)
+        n_deca_total = sum(len(v) for v in eligible.values())
+
+        prev_pn = None
+        for pn in sorted(eligible):
+            for rd in eligible[pn]:
+                dec  = decisions.get(rd["marquage"])
+                drow = DECARow(rd, dec)
+                self._drows.append(drow)
+
+                r = self._table.rowCount()
+                self._table.insertRow(r)
+                self._table.setRowHeight(r, 32)
+
+                bg = C_VALIDE if drow.statut == "VALIDÉ" else (
+                     C_PN_PCHECK if drow.statut == "EN ATTENTE" else C_EN_COURS)
+
+                # Fond alterné par PN
+                if pn != prev_pn and prev_pn is not None:
+                    pass  # on utilise bg standard
+                prev_pn = pn
+
+                def _ro(txt, b=bg):
+                    return _ro_item(txt, b)
+
+                pn_item = _ro(pn)
+                font = QFont(); font.setBold(True)
+                pn_item.setFont(font)
+                self._table.setItem(r, self._C_PN,    pn_item)
+                self._table.setItem(r, self._C_MARQ,  _ro(drow.marquage))
+                self._table.setItem(r, self._C_REF,   _ro(drow.ref))
+                self._table.setItem(r, self._C_SVC3C, _ro(drow.svc3_cur))
+                self._table.setItem(r, self._C_SVC1C, _ro(drow.svcs[0]))
+                self._table.setItem(r, self._C_STAT,  _ro(drow.statut))
+
+                if drow.locked:
+                    svc3_d = svc3_label(drow.n_svc3_plain, drow.n_svc1) if drow.n_svc3_plain and drow.n_svc1 else drow.n_svc3_plain
+                    svc4_d = svc4_label(drow.n_svc4_plain, drow.n_svc1) if drow.n_svc4_plain and drow.n_svc1 else drow.n_svc4_plain
+                    self._table.setItem(r, self._C_NSVC3, _ro(svc3_d))
+                    self._table.setItem(r, self._C_NSVC4, _ro(svc4_d))
+                    self._table.setItem(r, self._C_COMM,  _ro(drow.commentaire))
+                else:
+                    cb3 = DECATable._make_combo(self._svc3_opts)
+                    if drow.n_svc3_plain and drow.n_svc1:
+                        lbl = svc3_label(drow.n_svc3_plain, drow.n_svc1)
+                        idx = cb3.findText(lbl)
+                        if idx >= 0:
+                            cb3.setCurrentIndex(idx)
+                    cb4 = DECATable._make_combo([])
+                    self._fill_svc4(cb4, drow.n_svc1, drow.n_svc3_plain, drow.n_svc4_plain)
+                    ed = QLineEdit(drow.commentaire)
+                    ed.setFrame(False)
+                    ed.setStyleSheet("padding: 2px 4px;")
+                    drow.combo_svc3 = cb3
+                    drow.combo_svc4 = cb4
+                    drow.edit_comm  = ed
+                    cb3.currentTextChanged.connect(lambda txt, d=drow: self._on_svc3_change(txt, d))
+                    self._table.setCellWidget(r, self._C_NSVC3, cb3)
+                    self._table.setCellWidget(r, self._C_NSVC4, cb4)
+                    self._table.setCellWidget(r, self._C_COMM,  ed)
+
+        self._table.setSortingEnabled(False)
+        self._lbl_info.setText(f"{n_pn} PNs  ·  {n_deca_total} DECAs chargés")
+        self._lbl_status.setText("")
+
+    def _fill_svc4(self, cb4, svc1, svc3, current):
+        cb4.blockSignals(True)
+        cb4.clear()
+        opts = svc4_labeled_for_bld(svc1, svc3) if svc1 else [""]
+        cb4.addItems(opts)
+        completer = QCompleter(opts)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        cb4.setCompleter(completer)
+        if current and svc1:
+            lbl = svc4_label(current, svc1)
+            idx = cb4.findText(lbl)
+            if idx >= 0:
+                cb4.setCurrentIndex(idx)
+        cb4.blockSignals(False)
+
+    def _on_svc3_change(self, label, drow):
+        svc3_plain, svc1 = svc3_from_label(label)
+        drow.n_svc3_plain = svc3_plain
+        drow.n_svc1 = svc1
+        self._fill_svc4(drow.combo_svc4, svc1, svc3_plain, "")
+
+    def _filter_rows(self, text):
+        text = text.upper()
+        for r in range(self._table.rowCount()):
+            pn_item   = self._table.item(r, self._C_PN)
+            marq_item = self._table.item(r, self._C_MARQ)
+            pn   = pn_item.text().upper()   if pn_item   else ""
+            marq = marq_item.text().upper() if marq_item else ""
+            self._table.setRowHidden(r, bool(text) and text not in pn and text not in marq)
+
+    def _visible_unlocked_rows(self):
+        result = []
+        for r in range(self._table.rowCount()):
+            if self._table.isRowHidden(r) or r >= len(self._drows):
+                continue
+            drow = self._drows[r]
+            if not drow.locked:
+                result.append((r, drow))
+        return result
+
+    def _apply_selected_to_all(self):
+        sel = [idx.row() for idx in self._table.selectedIndexes()
+               if idx.column() == 0 and idx.row() < len(self._drows)
+               and not self._drows[idx.row()].locked]
+        if not sel:
+            QMessageBox.information(self, "Aucune source",
+                "Sélectionne d'abord une ligne source (la ligne dont tu veux copier N.Service 3/4).")
+            return
+        src = self._drows[sel[0]]
+        svc3_txt = src.combo_svc3.currentText() if src.combo_svc3 else ""
+        svc4_txt = src.combo_svc4.currentText() if src.combo_svc4 else ""
+        for _, drow in self._visible_unlocked_rows():
+            if drow is src or not drow.combo_svc3:
+                continue
+            idx3 = drow.combo_svc3.findText(svc3_txt)
+            if idx3 >= 0:
+                drow.combo_svc3.setCurrentIndex(idx3)
+            if drow.combo_svc4 and svc4_txt:
+                idx4 = drow.combo_svc4.findText(svc4_txt)
+                if idx4 >= 0:
+                    drow.combo_svc4.setCurrentIndex(idx4)
+
+    def _row_menu(self, pos):
+        idx = self._table.indexAt(pos)
+        if not idx.isValid() or idx.row() >= len(self._drows):
+            return
+        src = self._drows[idx.row()]
+        if src.locked:
+            return
+        menu = QMenu(self)
+        act = menu.addAction("↓  Appliquer N.Service 3/4 à toutes les lignes visibles")
+        if menu.exec(self._table.viewport().mapToGlobal(pos)) is act:
+            svc3_txt = src.combo_svc3.currentText() if src.combo_svc3 else ""
+            svc4_txt = src.combo_svc4.currentText() if src.combo_svc4 else ""
+            for _, drow in self._visible_unlocked_rows():
+                if drow is src or not drow.combo_svc3:
+                    continue
+                idx3 = drow.combo_svc3.findText(svc3_txt)
+                if idx3 >= 0:
+                    drow.combo_svc3.setCurrentIndex(idx3)
+                if drow.combo_svc4 and svc4_txt:
+                    idx4 = drow.combo_svc4.findText(svc4_txt)
+                    if idx4 >= 0:
+                        drow.combo_svc4.setCurrentIndex(idx4)
+
+    def _validate_visible(self, decision_val: str):
+        rows = self._visible_unlocked_rows()
+        missing = [self._drows[r].marquage for r, d in rows
+                   if not (d.combo_svc3 and d.combo_svc3.currentText().strip())]
+        if missing:
+            QMessageBox.warning(self, "N.Service 3 manquant",
+                "N.Service 3 obligatoire pour :\n" + "\n".join(missing[:10]) +
+                (f"\n… et {len(missing) - 10} autres" if len(missing) > 10 else ""))
+            return
+
+        updated_by = "manager_sprint"
+        n = 0
+        for _, drow in rows:
+            svc3_lbl   = drow.combo_svc3.currentText() if drow.combo_svc3 else ""
+            svc3_plain, svc1 = svc3_from_label(svc3_lbl)
+            svc4_lbl   = drow.combo_svc4.currentText() if drow.combo_svc4 else ""
+            svc4_plain = svc4_from_label(svc4_lbl)
+            svc2s      = svc2_for_svc3(svc3_plain) if svc3_plain else []
+            commentaire = drow.edit_comm.text() if drow.edit_comm else ""
+
+            existing = queries.get_decision(drow.marquage)
+            if existing and existing["decision"] == "EN ATTENTE":
+                queries.reset_decision(drow.marquage, reset_by=updated_by)
+
+            queries.upsert_decision(
+                marquage       = drow.marquage,
+                pn_short       = drow.pn_short,
+                module_context = self._module,
+                n_service1     = svc1 or None,
+                n_service2     = svc2s[0] if svc2s else None,
+                n_service3     = svc3_plain or None,
+                n_service4     = svc4_plain or None,
+                pre_check      = None,
+                decision       = decision_val,
+                commentaire    = commentaire or None,
+                updated_by     = updated_by,
+            )
+            n += 1
+
+        verb = "validés" if decision_val == "VALIDÉ" else "mis en attente"
+        self._lbl_status.setText(f"✓  {n} DECA(s) {verb}.")
+        self._load(self._spin.value())
+        if isinstance(self.parent(), MainWindow):
+            self.parent()._reload_pn_list()
+            self.parent()._update_stats()
+
+
 # ── Application en masse ─────────────────────────────────────────────────────
 
 class BatchApplyDialog(QDialog):
@@ -1258,6 +1591,12 @@ class MainWindow(QMainWindow):
         btn_reload_src.clicked.connect(self._open_reload_sources)
         top.addWidget(btn_reload_src)
         top.addSpacing(8)
+        btn_sprint = QPushButton("⚡  Vue rapide")
+        btn_sprint.setFixedHeight(32)
+        btn_sprint.setToolTip("Affiche tous les PNs avec peu de DECAs dans un tableau unique pour traitement rapide")
+        btn_sprint.clicked.connect(self._open_sprint_view)
+        top.addWidget(btn_sprint)
+        top.addSpacing(4)
         btn_export_full = QPushButton("📋  Export complet du module")
         btn_export_full.setFixedHeight(32)
         btn_export_full.setToolTip("Exporte TOUS les DECAs (validés, en attente, sans décision) avec statut, horodatage et commentaire")
@@ -1505,6 +1844,12 @@ class MainWindow(QMainWindow):
         else:
             tip = "Aucune source chargée — cliquer pour charger…"
         self._btn_reload_src.setToolTip(tip)
+
+    def _open_sprint_view(self):
+        dlg = SprintViewDialog(self._module, self)
+        dlg.exec()
+        self._reload_pn_list()
+        self._update_stats()
 
     def _open_batch_apply(self):
         dlg = BatchApplyDialog(self._module, self)
