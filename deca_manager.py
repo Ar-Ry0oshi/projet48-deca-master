@@ -957,6 +957,7 @@ class SprintViewDialog(QDialog):
         )
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._row_menu)
+        self._table.doubleClicked.connect(self._on_double_click)
         root.addWidget(self._table, stretch=1)
 
         # ── Boutons bas ───────────────────────────────────────────────────
@@ -1155,6 +1156,14 @@ class SprintViewDialog(QDialog):
                     idx4 = drow.combo_svc4.findText(svc4_txt)
                     if idx4 >= 0:
                         drow.combo_svc4.setCurrentIndex(idx4)
+
+    def _on_double_click(self, index):
+        row = index.row()
+        if row < len(self._drows):
+            drow = self._drows[row]
+            all_mqs = [d.marquage for d in self._drows]
+            dlg = DECADetailDialog(drow.marquage, all_mqs, self)
+            dlg.exec()
 
     def _validate_visible(self, decision_val: str):
         rows = self._visible_unlocked_rows()
