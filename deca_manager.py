@@ -791,9 +791,17 @@ class DECATable(QTableWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_C and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            selected = self.selectedItems()
-            if selected:
-                QApplication.clipboard().setText(selected[0].text())
+            idx = self.currentIndex()
+            if idx.isValid():
+                w = self.cellWidget(idx.row(), idx.column())
+                if isinstance(w, QComboBox):
+                    text = w.currentText()
+                elif isinstance(w, QLineEdit):
+                    text = w.text()
+                else:
+                    item = self.item(idx.row(), idx.column())
+                    text = item.text() if item else ""
+                QApplication.clipboard().setText(text)
             return
         super().keyPressEvent(event)
 
