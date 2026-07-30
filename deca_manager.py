@@ -535,16 +535,29 @@ class DECATable(QTableWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._row_menu)
 
+    def _drow_at(self, row: int) -> "DECARow | None":
+        """Retourne le DECARow correspondant au rang visuel/modèle, robuste au tri."""
+        item = self.item(row, COL_MARQ)
+        if item is None:
+            return None
+        mq = item.data(Qt.ItemDataRole.UserRole)
+        for d in self._rows:
+            if d.marquage == mq:
+                return d
+        return None
+
     def _row_menu(self, pos):
         index = self.indexAt(pos)
-        if not index.isValid() or index.row() >= len(self._rows):
+        if not index.isValid():
             return
-        drow = self._rows[index.row()]
+        drow = self._drow_at(index.row())
+        if drow is None:
+            return
         menu = QMenu(self)
 
-        selected_rows = sorted({idx.row() for idx in self.selectedIndexes()
-                                if idx.row() < len(self._rows)})
-        n_sel = sum(1 for r in selected_rows if not self._rows[r].locked and self._rows[r] is not drow)
+        selected_rows = sorted({idx.row() for idx in self.selectedIndexes()})
+        sel_drows = [d for r in selected_rows if (d := self._drow_at(r)) is not None]
+        n_sel = sum(1 for d in sel_drows if not d.locked and d is not drow)
 
         if not drow.locked:
             act_copy_sel = menu.addAction(
@@ -566,8 +579,7 @@ class DECATable(QTableWidget):
             return
 
         if chosen is act_copy_sel:
-            target_rows = [self._rows[r] for r in selected_rows
-                           if self._rows[r] is not drow and not self._rows[r].locked]
+            target_rows = [d for d in sel_drows if d is not drow and not d.locked]
             self.apply_svc3_to_rows(drow, target_rows)
             return
 
@@ -603,9 +615,9 @@ class DECATable(QTableWidget):
             self.setColumnHidden(col, not self.isColumnHidden(col))
 
     def _on_double_click(self, index):
-        row = index.row()
-        if row < len(self._rows):
-            self._open_detail(self._rows[row].marquage)
+        drow = self._drow_at(index.row())
+        if drow:
+            self._open_detail(drow.marquage)
 
     def _open_detail(self, marquage: str):
         all_mqs = [r.marquage for r in self._rows]
@@ -636,7 +648,9 @@ class DECATable(QTableWidget):
 
         bg = C_VALIDE if drow.statut == "VALIDÉ" else (C_LOCKED if drow.locked else C_EN_COURS)
 
-        self.setItem(r, COL_MARQ,  _ro_item(drow.marquage, bg))
+        marq_item = _ro_item(drow.marquage, bg)
+        marq_item.setData(Qt.ItemDataRole.UserRole, drow.marquage)
+        self.setItem(r, COL_MARQ,  marq_item)
         self.setItem(r, COL_REF,   _ro_item(drow.ref, bg))
         self.setItem(r, COL_SVC3,  _ro_item(drow.svc3_cur, bg))
         self.setItem(r, COL_SVC1,  _ro_item(drow.svcs[0], bg))
@@ -774,6 +788,10 @@ class DECATable(QTableWidget):
     def apply_svc3_to_rows(self, source_drow: DECARow, targets: list):
         svc3_txt = source_drow.combo_svc3.currentText() if source_drow.combo_svc3 else ""
         svc4_txt = source_drow.combo_svc4.currentText() if source_drow.combo_svc4 else ""
+        if not svc3_txt.strip():
+            QMessageBox.information(self, "N.Service 3 vide",
+                "La ligne source n'a pas de N.Service 3 sélectionné — rien à copier.")
+            return
         for drow in targets:
             if not drow.combo_svc3:
                 continue
