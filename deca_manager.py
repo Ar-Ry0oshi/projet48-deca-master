@@ -2217,7 +2217,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Export complet réussi → {path}", 5000)
 
     def _export_model(self):
-        """Export modèle d'import : Marquage + colonnes [Service] vides."""
+        """Export modèle d'import : Marquage + N.Services décidés (prêt à importer)."""
         path, _ = QFileDialog.getSaveFileName(
             self, "Export modèle d'import",
             f"modele_import_{self._module}.xlsx", "Excel (*.xlsx)"
@@ -2228,12 +2228,12 @@ class MainWindow(QMainWindow):
         if not rows:
             QMessageBox.information(self, "Export vide", "Aucun outil trouvé pour ce module.")
             return
-        df = pd.DataFrame([dict(r) for r in rows])[["marquage"]]
-        df.columns = ["Marquage"]
-        df["[Service] Service1"] = ""
-        df["[Service] Service2"] = ""
-        df["[Service] Service3"] = ""
-        df["[Service] Service4"] = ""
+        df = pd.DataFrame([dict(r) for r in rows])[
+            ["marquage", "n_service1", "n_service2", "n_service3", "n_service4"]
+        ]
+        df.columns = ["Marquage", "[Service] Service1", "[Service] Service2",
+                      "[Service] Service3", "[Service] Service4"]
+        df.fillna("", inplace=True)
         df.to_excel(path, index=False)
         self.statusBar().showMessage(f"Modèle d'import réussi → {path}", 5000)
 
