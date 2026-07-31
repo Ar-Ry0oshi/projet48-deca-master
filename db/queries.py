@@ -332,3 +332,78 @@ def get_changelog(marquage: str) -> list:
         "SELECT * FROM changelog WHERE marquage = ? ORDER BY changed_at DESC",
         (marquage,)
     )
+
+
+# ---------------------------------------------------------------------------
+# Stats window queries
+# ---------------------------------------------------------------------------
+
+def get_full_changelog(
+    module: str | None = None,
+    marquage: str | None = None,
+    since_days: int | None = None,
+) -> list:
+    from datetime import datetime, timezone, timedelta
+    conditions, params = [], []
+    if module:
+        conditions.append("c.marquage IN (SELECT marquage FROM tools WHERE modules_effective LIKE ?)")
+        params.append(f"%{module}%")
+    if marquage:
+        conditions.append("c.marquage LIKE ?")
+        params.append(f"%{marquage.strip().upper()}%")
+    if since_days:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+        conditions.append("c.changed_at >= ?")
+        params.append(cutoff)
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    return db.fetchall(f"""
+        SELECT c.changed_at, c.marquage, c.pn_short,
+               c.field_changed, c.old_value, c.new_value, c.changed_by
+        FROM changelog c {where}
+        ORDER BY c.changed_at DESC LIMIT 2000
+    """, tuple(params))
+
+
+def get_activity_by_day() -> list:
+    """Nombre de décisions finales (VALIDÉ + EN ATTENTE) posées par jour."""
+    return db.fetchall("""
+        SELECT DATE(changed_at) AS day, COUNT(*) AS n
+        FROM changelog
+        WHERE field_changed = 'decision'
+          AND new_value IN ('VALIDÉ', 'EN ATTENTE')
+        GROUP BY day
+        ORDER BY day
+    """)
+
+
+def get_svc3_distribution() -> list:
+    return db.fetchall("""
+        SELECT n_service3, COUNT(*) AS n
+        FROM decisions
+        WHERE n_service3 IS NOT NULL AND n_service3 != ''
+        GROUP BY n_service3
+        ORDER BY n DESC
+        LIMIT 25
+    """)
+
+
+def get_svc4_distribution() -> list:
+    return db.fetchall("""
+        SELECT n_service4, COUNT(*) AS n
+        FROM decisions
+        WHERE n_service4 IS NOT NULL AND n_service4 != ''
+        GROUP BY n_service4
+        ORDER BY n DESC
+        LIMIT 25
+    """)
+
+
+def get_all_stats_all_modules(modules: list) -> list:
+    """Stats (validé/en_attente/precheck/en_cours/total) pour chaque module."""
+    result = []
+    for m in modules:
+        s = get_stats_for_module(m)
+        if s.get("total", 0):
+            s["module"] = m
+            result.append(s)
+    return result

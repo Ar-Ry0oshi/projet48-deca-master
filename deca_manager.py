@@ -1770,6 +1770,16 @@ class MainWindow(QMainWindow):
         btn_export_model.setToolTip("Exporte la liste des marquages au format import : Marquage + colonnes [Service]")
         btn_export_model.clicked.connect(self._export_model)
         top.addWidget(btn_export_model)
+
+        btn_stats = QPushButton("📊  Statistiques")
+        btn_stats.setFixedHeight(32)
+        btn_stats.setStyleSheet(
+            "QPushButton { background:#6366f1; color:white; font-weight:bold; border-radius:4px; padding:0 10px; }"
+            "QPushButton:hover { background:#4f46e5; }"
+        )
+        btn_stats.setToolTip("Ouvrir la fenêtre statistiques (activité, distributions, historique)")
+        btn_stats.clicked.connect(self._open_stats)
+        top.addWidget(btn_stats)
         root.addLayout(top)
 
         # ── Splitter ──────────────────────────────────────────────────────
@@ -2236,6 +2246,11 @@ class MainWindow(QMainWindow):
         df.fillna("", inplace=True)
         df.to_excel(path, index=False)
         self.statusBar().showMessage(f"Modèle d'import réussi → {path}", 5000)
+
+    def _open_stats(self):
+        from stats_window import StatsWindow
+        dlg = StatsWindow(self)
+        dlg.exec()
 
 
 # ── Entrée ────────────────────────────────────────────────────────────────────
