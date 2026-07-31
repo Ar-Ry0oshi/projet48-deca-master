@@ -33,7 +33,7 @@ with st.sidebar:
     st.caption("PSO Tooling — SAESB")
     st.divider()
 
-    _pages = ["Dashboard", "Pré-check", "Réunion", "Progression", "Données", "Historique"]
+    _pages = ["Dashboard", "Progression", "Historique"]
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Dashboard"
     page = st.session_state["current_page"]
@@ -49,17 +49,8 @@ with st.sidebar:
 if page == "Dashboard":
     from pages.dashboard import render
     render()
-elif page == "Pré-check":
-    from pages.precheck import render
-    render()
-elif page == "Réunion":
-    from pages.reunion import render
-    render()
 elif page == "Progression":
     from pages.progression import render
-    render()
-elif page == "Données":
-    from pages.data_management import render
     render()
 elif page == "Historique":
     from pages.historique import render
