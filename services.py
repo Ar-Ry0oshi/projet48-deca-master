@@ -176,3 +176,21 @@ def svc4_from_label(label) -> str:
     if sep:
         return label.split(sep, 1)[1]
     return label
+
+
+@lru_cache(maxsize=1)
+def _ref_set() -> frozenset:
+    """Frozenset of (s1, s2, s3, s4) tuples from SERVICES_EXTRACT.xlsx."""
+    if not _SRC.exists():
+        return frozenset()
+    df = pd.read_excel(_SRC, dtype=str).fillna("").apply(lambda c: c.str.strip())
+    cols = [c for c in ["service1", "service2", "service3", "service4"] if c in df.columns]
+    for c in ["service1", "service2", "service3", "service4"]:
+        if c not in df.columns:
+            df[c] = ""
+    return frozenset(zip(df["service1"], df["service2"], df["service3"], df["service4"]))
+
+
+def is_valid_in_ref(s1: str, s2: str, s3: str, s4: str) -> bool:
+    """True si la combinaison (s1, s2, s3, s4) existe dans SERVICES_EXTRACT."""
+    return bool(s1 and s2 and s3 and s4) and (s1, s2, s3, s4) in _ref_set()

@@ -29,15 +29,16 @@ from db import queries
 from services import (
     svc3_labeled_options, svc3_from_label, svc3_label,
     svc4_labeled_for_bld, svc4_from_label, svc4_label,
-    svc2_for_svc3,
+    svc2_for_svc3, is_valid_in_ref,
 )
 
 # ── Couleurs ──────────────────────────────────────────────────────────────────
-C_VALIDE    = "#d4edda"   # vert clair — table DECA
-C_PN_VALIDE = "#6dbf7e"   # vert intense — liste PN (tout VALIDÉ)
-C_PN_PCHECK = "#fce8b2"   # jaune orangé — liste PN (EN ATTENTE / pré-checké)
-C_EN_COURS  = "#ffffff"
-C_LOCKED    = "#f0f0f0"
+C_VALIDE      = "#d4edda"   # vert clair — table DECA
+C_PN_VALIDE   = "#6dbf7e"   # vert intense — liste PN (tout VALIDÉ)
+C_PN_PCHECK   = "#fce8b2"   # jaune orangé — liste PN (EN ATTENTE / pré-checké)
+C_EN_COURS    = "#ffffff"
+C_LOCKED      = "#f0f0f0"
+C_AUTO_FILL   = "#ede9fe"   # lavande — service source valide, à adopter
 
 # ── Index colonnes ────────────────────────────────────────────────────────────
 COL_MARQ     = 0
@@ -491,6 +492,14 @@ class DECARow:
         self.n_svc1       = (dec or {}).get("n_service1") or ""
         self.commentaire  = (dec or {}).get("commentaire") or ""
         self.pre_check    = (dec or {}).get("pre_check") or ""
+        # True si le service source (S1-4 de l'extract) est valide dans le référentiel
+        # ET que la décision n'a pas encore de N.Service 3 → candidat "adopter source"
+        s2_src = self.svcs[1]
+        self.source_auto_fillable: bool = (
+            not self.n_svc3_plain
+            and is_valid_in_ref(self.svcs[0], s2_src, self.svc3_cur, self.svcs[3])
+        )
+
         self.combo_svc3:    QComboBox | None = None
         self.combo_svc4:    QComboBox | None = None
         self.edit_comm:     QLineEdit | None = None
@@ -559,6 +568,8 @@ class DECATable(QTableWidget):
         sel_drows = [d for r in selected_rows if (d := self._drow_at(r)) is not None]
         n_sel = sum(1 for d in sel_drows if not d.locked and d is not drow)
 
+        n_auto = sum(1 for d in self._rows if not d.locked and d.source_auto_fillable)
+
         if not drow.locked:
             act_copy_sel = menu.addAction(
                 f"↓  Appliquer N.Service 3/4 aux {n_sel} ligne(s) sélectionnée(s)"
@@ -566,9 +577,18 @@ class DECATable(QTableWidget):
             )
             act_copy_sel.setEnabled(n_sel > 0)
             act_copy_all = menu.addAction("↓  Appliquer N.Service 3/4 à toutes les lignes")
+            menu.addSeparator()
+            act_adopt_one = menu.addAction("✨  Adopter service source (cette ligne)")
+            act_adopt_one.setEnabled(drow.source_auto_fillable)
+            act_adopt_all = menu.addAction(
+                f"✨  Adopter service source pour toutes les lignes ({n_auto} candidats)"
+            )
+            act_adopt_all.setEnabled(n_auto > 0)
         else:
             act_copy_sel = None
             act_copy_all = None
+            act_adopt_one = None
+            act_adopt_all = None
 
         act_unlock = menu.addAction("🔓  Déverrouiller cette ligne")
         if not drow.locked:
@@ -585,6 +605,14 @@ class DECATable(QTableWidget):
 
         if chosen is act_copy_all:
             self.apply_svc3_to_all(drow)
+            return
+
+        if chosen is act_adopt_one:
+            self.adopt_source(drow)
+            return
+
+        if chosen is act_adopt_all:
+            self.adopt_source_all()
             return
 
         if chosen is act_unlock:
@@ -646,7 +674,14 @@ class DECATable(QTableWidget):
         self.insertRow(r)
         self.setRowHeight(r, 34)
 
-        bg = C_VALIDE if drow.statut == "VALIDÉ" else (C_LOCKED if drow.locked else C_EN_COURS)
+        if drow.statut == "VALIDÉ":
+            bg = C_VALIDE
+        elif drow.locked:
+            bg = C_LOCKED
+        elif drow.source_auto_fillable:
+            bg = C_AUTO_FILL
+        else:
+            bg = C_EN_COURS
 
         marq_item = _ro_item(drow.marquage, bg)
         marq_item.setData(Qt.ItemDataRole.UserRole, drow.marquage)
@@ -806,6 +841,29 @@ class DECATable(QTableWidget):
     def apply_svc3_to_all(self, source_drow: DECARow):
         targets = [d for d in self._rows if d is not source_drow and not d.locked]
         self.apply_svc3_to_rows(source_drow, targets)
+
+    def adopt_source(self, drow: DECARow):
+        """Pré-remplit N.Service 3/4 depuis les colonnes service source de l'extract."""
+        if drow.locked or not drow.source_auto_fillable:
+            return
+        s1, s3, s4 = drow.svcs[0], drow.svc3_cur, drow.svcs[3]
+        lbl3 = svc3_label(s3, s1)
+        if drow.combo_svc3:
+            idx = drow.combo_svc3.findText(lbl3)
+            if idx >= 0:
+                drow.combo_svc3.setCurrentIndex(idx)
+                # _on_svc3_change a mis à jour le svc4 combo, on peut maintenant set svc4
+                lbl4 = svc4_label(s4, s1)
+                if drow.combo_svc4:
+                    idx4 = drow.combo_svc4.findText(lbl4)
+                    if idx4 >= 0:
+                        drow.combo_svc4.setCurrentIndex(idx4)
+
+    def adopt_source_all(self):
+        """Adopte le service source pour toutes les lignes auto-fillable du PN."""
+        for drow in self._rows:
+            if not drow.locked and drow.source_auto_fillable:
+                self.adopt_source(drow)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_C and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
