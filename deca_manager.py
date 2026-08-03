@@ -1739,47 +1739,50 @@ class MainWindow(QMainWindow):
         btn_search.clicked.connect(self._open_global_search)
         top.addWidget(btn_search)
         top.addStretch()
-        btn_reload_src = QPushButton("⟳")
-        btn_reload_src.setFixedSize(30, 30)
-        btn_reload_src.setStyleSheet(
-            "QPushButton { border:1px solid #bbb; border-radius:4px; color:#666; font-size:14px; }"
-            "QPushButton:hover { background:#e8e8e8; color:#333; }"
-        )
-        self._btn_reload_src = btn_reload_src
-        btn_reload_src.clicked.connect(self._open_reload_sources)
-        top.addWidget(btn_reload_src)
-        top.addSpacing(8)
-        btn_sprint = QPushButton("⚡  Vue rapide")
-        btn_sprint.setFixedHeight(32)
-        btn_sprint.setToolTip("Affiche tous les PNs avec peu de DECAs dans un tableau unique pour traitement rapide")
-        btn_sprint.clicked.connect(self._open_sprint_view)
-        top.addWidget(btn_sprint)
-        top.addSpacing(4)
-        btn_export_full = QPushButton("📋  Export complet du module")
-        btn_export_full.setFixedHeight(32)
-        btn_export_full.setToolTip("Exporte TOUS les DECAs (validés, en attente, sans décision) avec statut, horodatage et commentaire")
-        btn_export_full.clicked.connect(self._export_full)
-        top.addWidget(btn_export_full)
 
-        btn_export_model = QPushButton("📥  Export modèle d'import")
-        btn_export_model.setFixedHeight(32)
-        btn_export_model.setStyleSheet(
-            "QPushButton { background:#0078d4; color:white; font-weight:bold; border-radius:4px; padding:0 10px; }"
-            "QPushButton:hover { background:#005fa3; }"
-        )
-        btn_export_model.setToolTip("Exporte la liste des marquages au format import : Marquage + colonnes [Service]")
-        btn_export_model.clicked.connect(self._export_model)
-        top.addWidget(btn_export_model)
+        # ── Menu "⋮" — regroupe les actions secondaires pour éviter l'overflow ──
+        from PyQt6.QtWidgets import QToolButton, QMenu
+        from PyQt6.QtGui import QAction
+        self._btn_reload_src = None  # référence pour tooltip (mis à jour dans _update_source_tooltip)
 
-        btn_stats = QPushButton("📊  Statistiques")
-        btn_stats.setFixedHeight(32)
-        btn_stats.setStyleSheet(
-            "QPushButton { background:#6366f1; color:white; font-weight:bold; border-radius:4px; padding:0 10px; }"
-            "QPushButton:hover { background:#4f46e5; }"
+        btn_more = QToolButton()
+        btn_more.setText("⋮  Actions")
+        btn_more.setFixedHeight(32)
+        btn_more.setStyleSheet(
+            "QToolButton { border:1px solid #bbb; border-radius:4px; padding:0 10px; font-size:13px; }"
+            "QToolButton:hover { background:#e8e8e8; }"
+            "QToolButton::menu-indicator { image: none; }"
         )
-        btn_stats.setToolTip("Ouvrir la fenêtre statistiques (activité, distributions, historique)")
-        btn_stats.clicked.connect(self._open_stats)
-        top.addWidget(btn_stats)
+        btn_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+
+        menu_more = QMenu(btn_more)
+        act_reload  = QAction("⟳  Recharger les sources…",     self)
+        act_sprint  = QAction("⚡  Vue rapide…",                 self)
+        act_batch   = QAction("⚡  Appliquer en masse…",         self)
+        act_export  = QAction("📋  Export complet du module",    self)
+        act_model   = QAction("📥  Export modèle d'import",      self)
+        act_stats   = QAction("📊  Ouvrir les Statistiques",     self)
+        act_reload.setToolTip("Remplace les fichiers sources et recharge la base")
+        act_sprint.setToolTip("Vue plate de tous les PNs avec peu de DECAs")
+        act_batch.setToolTip("Appliquer N.Service 3/4 à plusieurs PNs d'un coup")
+        act_reload.triggered.connect(self._open_reload_sources)
+        act_sprint.triggered.connect(self._open_sprint_view)
+        act_batch.triggered.connect(self._open_batch_apply)
+        act_export.triggered.connect(self._export_full)
+        act_model.triggered.connect(self._export_model)
+        act_stats.triggered.connect(self._open_stats)
+        menu_more.addAction(act_reload)
+        menu_more.addSeparator()
+        menu_more.addAction(act_sprint)
+        menu_more.addAction(act_batch)
+        menu_more.addSeparator()
+        menu_more.addAction(act_export)
+        menu_more.addAction(act_model)
+        menu_more.addSeparator()
+        menu_more.addAction(act_stats)
+        btn_more.setMenu(menu_more)
+        self._act_reload_src = act_reload   # pour le tooltip source
+        top.addWidget(btn_more)
         root.addLayout(top)
 
         # ── Splitter ──────────────────────────────────────────────────────
@@ -2018,7 +2021,8 @@ class MainWindow(QMainWindow):
             )
         else:
             tip = "Aucune source chargée — cliquer pour charger…"
-        self._btn_reload_src.setToolTip(tip)
+        if self._act_reload_src:
+            self._act_reload_src.setToolTip(tip)
 
     def _open_sprint_view(self):
         dlg = SprintViewDialog(self._module, self)
@@ -2249,8 +2253,10 @@ class MainWindow(QMainWindow):
 
     def _open_stats(self):
         from stats_window import StatsWindow
-        dlg = StatsWindow(self)
-        dlg.exec()
+        if not hasattr(self, "_stats_win") or not self._stats_win.isVisible():
+            self._stats_win = StatsWindow()
+        self._stats_win.show()
+        self._stats_win.raise_()
 
 
 # ── Entrée ────────────────────────────────────────────────────────────────────
