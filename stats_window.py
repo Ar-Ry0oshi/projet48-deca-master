@@ -46,7 +46,8 @@ _BAT_KW   = {"MF": "MF", "LSO": "LSO"}
 
 def _canvas(fig: Figure) -> FigureCanvasQTAgg:
     c = FigureCanvasQTAgg(fig)
-    c.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    c.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+    c.setMinimumHeight(int(fig.get_figheight() * fig.get_dpi() * 0.9))
     return c
 
 
@@ -125,14 +126,46 @@ class _OverviewTab(QWidget):
         traites_g  = valide_g + attente_g
         pct_g      = round(100 * traites_g / total_g) if total_g else 0
 
+        # Count DECAs with complete valid S1→S1-4 from latest extract
+        ext_total, ext_s14_n = 0, 0
+        ext_label = ""
+        try:
+            csv_files = _scan_extracts()
+            if csv_files and SERVICES_REF_PATH.exists():
+                latest = csv_files[0]
+                ext_label = latest.stem[:22]
+                df_ext = _read_deca_csv(latest.read_bytes())
+                ref    = _load_ref()
+                kpi    = _compute_kpi(df_ext, ref, "ALL")
+                ext_total  = kpi["S1-4"]["total"]
+                ext_s14_n  = kpi["S1-4"]["n"]
+        except Exception:
+            pass
+        ext_pct = round(100 * ext_s14_n / ext_total) if ext_total else 0
+
         row = QHBoxLayout()
-        row.addWidget(_card(str(total_g),    "Total DECAs",  _C_TEXT))
-        row.addWidget(_card(str(valide_g),   "Validés",      _C_VALIDE))
-        row.addWidget(_card(str(attente_g),  "En attente",   _C_ATTENTE))
-        row.addWidget(_card(str(precheck_g), "Pré-check",    _C_PRECHECK))
-        row.addWidget(_card(str(encours_g),  "En cours",     "#9ca3af"))
-        row.addWidget(_card(f"{pct_g}%",     "Traités",      _C_VALIDE if pct_g == 100 else _C_TEXT))
+        row.addWidget(_card(str(total_g),    "Total DECAs (DB)",  _C_TEXT))
+        row.addWidget(_card(str(valide_g),   "Validés (DB)",      _C_VALIDE))
+        row.addWidget(_card(str(attente_g),  "En attente",        _C_ATTENTE))
+        row.addWidget(_card(str(precheck_g), "Pré-check",         _C_PRECHECK))
+        row.addWidget(_card(str(encours_g),  "En cours",          "#9ca3af"))
+        row.addWidget(_card(f"{pct_g}%",     "Traités (DB)",      _C_VALIDE if pct_g == 100 else _C_TEXT))
         self._lay.addLayout(row)
+
+        if ext_total:
+            ext_row = QHBoxLayout()
+            ext_row.addWidget(_card(
+                f"{ext_s14_n} / {ext_total}",
+                f"S1→S4 complets dans extract\n({ext_label})",
+                _C_VALIDE if ext_pct >= 80 else (_C_PRECHECK if ext_pct >= 40 else "#e74c3c"),
+            ))
+            ext_row.addWidget(_card(
+                f"{ext_pct}%",
+                "% outils avec service complet (S1-4)",
+                _C_VALIDE if ext_pct >= 80 else (_C_PRECHECK if ext_pct >= 40 else "#e74c3c"),
+            ))
+            ext_row.addStretch()
+            self._lay.addLayout(ext_row)
 
         self._lay.addWidget(_section("Avancement par module"))
         modules   = df["module"].tolist()
