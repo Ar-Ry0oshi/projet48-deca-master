@@ -585,11 +585,14 @@ class DECATable(QTableWidget):
                 f"✨  Adopter service source pour toutes les lignes ({n_auto} candidats)"
             )
             act_adopt_all.setEnabled(n_auto > 0)
+            menu.addSeparator()
+            act_lent = menu.addAction("🔄  Marquer comme 'En prêt' (Loaned)")
         else:
             act_copy_sel = None
             act_copy_all = None
             act_adopt_one = None
             act_adopt_all = None
+            act_lent = None
 
         act_unlock = menu.addAction("🔓  Déverrouiller cette ligne")
         if not drow.locked:
@@ -616,10 +619,33 @@ class DECATable(QTableWidget):
             self.adopt_source_all()
             return
 
+        if chosen is act_lent:
+            confirm = QMessageBox.question(
+                self, "Marquer comme 'En prêt'",
+                f"Marquer  {drow.marquage}  comme 'En prêt' ?\n\nAucun service ne sera requis pour cet outil.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+            parent = self.parent()
+            while parent and not isinstance(parent, MainWindow):
+                parent = parent.parent()
+            module = parent._module if parent else ""
+            queries.upsert_decision(
+                marquage=drow.marquage, pn_short=drow.pn_short,
+                module_context=module, n_service1=None, n_service2=None,
+                n_service3=None, n_service4=None, pre_check=None,
+                decision="EN PRÊT", commentaire=drow.commentaire or None,
+                updated_by="manager_user",
+            )
+            if parent:
+                parent._on_pn_selected(parent.pn_list.currentItem(), None)
+            return
+
         if chosen is act_unlock:
             confirm = QMessageBox.question(
                 self, "Déverrouiller",
-                f"Déverrouiller  {drow.marquage}  ?\n\nLa décision VALIDÉ sera remise en EN COURS.",
+                f"Déverrouiller  {drow.marquage}  ?\n\nLa décision sera remise en EN COURS.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if confirm != QMessageBox.StandardButton.Yes:
