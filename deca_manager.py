@@ -39,6 +39,7 @@ C_PN_PCHECK   = "#fce8b2"   # jaune orangé — liste PN (EN ATTENTE / pré-chec
 C_EN_COURS    = "#ffffff"
 C_LOCKED      = "#f0f0f0"
 C_AUTO_FILL   = "#ede9fe"   # lavande — service source valide, à adopter
+C_LENT        = "#dbeafe"   # bleu clair — outil en prêt (Loaned)
 
 # ── Index colonnes ────────────────────────────────────────────────────────────
 COL_MARQ     = 0
@@ -485,7 +486,7 @@ class DECARow:
         self.locs       = [row_data.get(f"localisation{i}") or "" for i in range(1, 6)]
         self.assy       = row_data.get("assy_flag") or ""
         self.complexity = row_data.get("complexity_flag") or ""
-        self.locked       = bool(dec and dec.get("decision") == "VALIDÉ")
+        self.locked       = bool(dec and dec.get("decision") in ("VALIDÉ", "EN PRÊT"))
         self.statut       = (dec or {}).get("decision") or "EN COURS"
         self.n_svc3_plain = (dec or {}).get("n_service3") or ""
         self.n_svc4_plain = (dec or {}).get("n_service4") or ""
@@ -676,6 +677,8 @@ class DECATable(QTableWidget):
 
         if drow.statut == "VALIDÉ":
             bg = C_VALIDE
+        elif drow.statut == "EN PRÊT":
+            bg = C_LENT
         elif drow.locked:
             bg = C_LOCKED
         elif drow.source_auto_fillable:
@@ -1050,6 +1053,15 @@ class SprintViewDialog(QDialog):
         self._lbl_status.setStyleSheet("color:#1a7f37; font-weight:bold;")
         bot.addWidget(self._lbl_status, stretch=1)
 
+        btn_save = QPushButton("💾  Sauvegarder la progression")
+        btn_save.setFixedHeight(34)
+        btn_save.setToolTip("Enregistre les valeurs saisies sans exiger N.Service 3 — les lignes vides restent EN COURS")
+        btn_save.setStyleSheet(
+            "QPushButton { background:#6366f1; color:white; font-weight:bold; border-radius:4px; }"
+            "QPushButton:hover { background:#4f46e5; }"
+        )
+        btn_save.clicked.connect(self._save_progress)
+
         btn_valide = QPushButton("✓  Valider tout le visible")
         btn_valide.setFixedHeight(34)
         btn_valide.setStyleSheet(
@@ -1070,6 +1082,7 @@ class SprintViewDialog(QDialog):
         btn_close.setFixedHeight(34)
         btn_close.clicked.connect(self.accept)
 
+        bot.addWidget(btn_save)
         bot.addWidget(btn_attente)
         bot.addWidget(btn_valide)
         bot.addWidget(btn_close)
@@ -1092,20 +1105,32 @@ class SprintViewDialog(QDialog):
         eligible = {pn: rows for pn, rows in pn_tools.items() if len(rows) <= max_deca}
         n_pn  = len(eligible)
         n_deca_total = sum(len(v) for v in eligible.values())
+        n_lent = 0
 
         prev_pn = None
         for pn in sorted(eligible):
             for rd in eligible[pn]:
                 dec  = decisions.get(rd["marquage"])
                 drow = DECARow(rd, dec)
+
+                if drow.statut == "EN PRÊT":
+                    n_lent += 1
+                    continue  # outil en prêt — exclu de la vue rapide
+
                 self._drows.append(drow)
 
                 r = self._table.rowCount()
                 self._table.insertRow(r)
                 self._table.setRowHeight(r, 32)
 
-                bg = C_VALIDE if drow.statut == "VALIDÉ" else (
-                     C_PN_PCHECK if drow.statut == "EN ATTENTE" else C_EN_COURS)
+                if drow.statut == "VALIDÉ":
+                    bg = C_VALIDE
+                elif drow.statut == "EN ATTENTE":
+                    bg = C_PN_PCHECK
+                elif drow.source_auto_fillable:
+                    bg = C_AUTO_FILL
+                else:
+                    bg = C_EN_COURS
 
                 # Fond alterné par PN
                 if pn != prev_pn and prev_pn is not None:
@@ -1152,7 +1177,8 @@ class SprintViewDialog(QDialog):
                     self._table.setCellWidget(r, self._C_COMM,  ed)
 
         self._table.setSortingEnabled(False)
-        self._lbl_info.setText(f"{n_pn} PNs  ·  {n_deca_total} DECAs chargés")
+        lent_txt = f"  ·  {n_lent} en prêt (masqués)" if n_lent else ""
+        self._lbl_info.setText(f"{n_pn} PNs  ·  {n_deca_total} DECAs chargés{lent_txt}")
         self._lbl_status.setText("")
 
     def _fill_svc4(self, cb4, svc1, svc3, current):
@@ -1226,8 +1252,13 @@ class SprintViewDialog(QDialog):
         if src.locked:
             return
         menu = QMenu(self)
-        act = menu.addAction("↓  Appliquer N.Service 3/4 à toutes les lignes visibles")
-        if menu.exec(self._table.viewport().mapToGlobal(pos)) is act:
+        act_apply = menu.addAction("↓  Appliquer N.Service 3/4 à toutes les lignes visibles")
+        menu.addSeparator()
+        act_lent = menu.addAction("🔄  Marquer comme 'En prêt' (Loaned) — retire l'outil de la liste")
+
+        chosen = menu.exec(self._table.viewport().mapToGlobal(pos))
+
+        if chosen is act_apply:
             svc3_txt = src.combo_svc3.currentText() if src.combo_svc3 else ""
             svc4_txt = src.combo_svc4.currentText() if src.combo_svc4 else ""
             for _, drow in self._visible_unlocked_rows():
@@ -1240,6 +1271,60 @@ class SprintViewDialog(QDialog):
                     idx4 = drow.combo_svc4.findText(svc4_txt)
                     if idx4 >= 0:
                         drow.combo_svc4.setCurrentIndex(idx4)
+
+        elif chosen is act_lent:
+            self._mark_lent(src)
+
+    def _save_progress(self):
+        """Sauvegarde les svc3/4/commentaire sans exiger N.Service 3 — statut reste EN COURS."""
+        n = 0
+        for _, drow in self._visible_unlocked_rows():
+            svc3_lbl    = drow.combo_svc3.currentText() if drow.combo_svc3 else ""
+            svc3_plain, svc1 = svc3_from_label(svc3_lbl)
+            svc4_lbl    = drow.combo_svc4.currentText() if drow.combo_svc4 else ""
+            svc4_plain  = svc4_from_label(svc4_lbl)
+            svc2s       = svc2_for_svc3(svc3_plain) if svc3_plain else []
+            commentaire = drow.edit_comm.text() if drow.edit_comm else ""
+            # Ne rétrograde pas un EN ATTENTE existant
+            keep_status = drow.statut if drow.statut == "EN ATTENTE" else "EN COURS"
+            queries.upsert_decision(
+                marquage       = drow.marquage,
+                pn_short       = drow.pn_short,
+                module_context = self._module,
+                n_service1     = svc1 or None,
+                n_service2     = svc2s[0] if svc2s else None,
+                n_service3     = svc3_plain or None,
+                n_service4     = svc4_plain or None,
+                pre_check      = None,
+                decision       = keep_status,
+                commentaire    = commentaire or None,
+                updated_by     = "manager_sprint_save",
+            )
+            n += 1
+        self._lbl_status.setText(f"💾  {n} DECA(s) sauvegardés.")
+        if isinstance(self.parent(), MainWindow):
+            self.parent()._reload_pn_list()
+            self.parent()._update_stats()
+
+    def _mark_lent(self, drow: DECARow):
+        """Marque l'outil comme 'En prêt' : aucun service requis, retiré de la vue."""
+        queries.upsert_decision(
+            marquage       = drow.marquage,
+            pn_short       = drow.pn_short,
+            module_context = self._module,
+            n_service1     = None,
+            n_service2     = None,
+            n_service3     = None,
+            n_service4     = None,
+            pre_check      = None,
+            decision       = "EN PRÊT",
+            commentaire    = drow.commentaire or None,
+            updated_by     = "manager_sprint",
+        )
+        self._load(self._spin.value())
+        if isinstance(self.parent(), MainWindow):
+            self.parent()._reload_pn_list()
+            self.parent()._update_stats()
 
     def _on_double_click(self, index):
         row = index.row()
