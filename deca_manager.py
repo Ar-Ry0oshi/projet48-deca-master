@@ -71,7 +71,7 @@ HEADERS = [
     "Assemblage", "Complexité",
     "N.Service 3", "N.Service 4", "Commentaire", "Pré-check", "Statut",
 ]
-COL_WIDTHS = [110, 140, 140, 110, 110, 110, 80, 90, 90, 90, 90, 80, 70, 100, 210, 210, 150, 100, 80]
+COL_WIDTHS = [100, 120, 120, 100, 100, 100, 70, 85, 85, 85, 85, 70, 60,  90, 180, 180, 130,  90, 70]
 
 
 def _ro_item(text: str, bg: str) -> QTableWidgetItem:
@@ -528,6 +528,7 @@ class DECATable(QTableWidget):
 
         for col, w in enumerate(COL_WIDTHS):
             self.setColumnWidth(col, w)
+        self.setMinimumWidth(0)   # évite que Qt impose la somme des colonnes comme largeur min
 
         self.horizontalHeader().setStyleSheet(
             "QHeaderView::section { background:#dce6f1; font-weight:bold; "
@@ -1000,7 +1001,7 @@ class SprintViewDialog(QDialog):
     _C_STAT  = 8
     _HEADERS = ["PN", "Marquage", "Réf", "Svc 3 actuel", "Svc 1 actuel",
                 "N.Service 3", "N.Service 4", "Commentaire", "Statut"]
-    _WIDTHS  = [130, 110, 130, 130, 110, 210, 210, 150, 80]
+    _WIDTHS  = [120, 100, 120, 120, 100, 180, 180, 130, 70]
 
     def __init__(self, module: str, parent=None):
         super().__init__(parent)
@@ -1065,6 +1066,7 @@ class SprintViewDialog(QDialog):
         self._table.setAlternatingRowColors(False)
         for col, w in enumerate(self._WIDTHS):
             self._table.setColumnWidth(col, w)
+        self._table.setMinimumWidth(0)
         self._table.horizontalHeader().setStyleSheet(
             "QHeaderView::section { background:#dce6f1; font-weight:bold; padding:4px; border:1px solid #bbb; }"
         )
