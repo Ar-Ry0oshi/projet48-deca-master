@@ -21,16 +21,16 @@ import pandas as pd
 
 # Fichiers exports complets générés par l'appli (xlsx)
 EXPORT_FILES = [
-    r"C:\chemin\vers\export_complet_MM03.xlsx",
-    r"C:\chemin\vers\export_complet_SM57.xlsx",
-    r"C:\chemin\vers\export_complet_SM58.xlsx",
-    r"C:\chemin\vers\export_complet_SM59.xlsx",
+    r"U:\DIR_TECH\01 - PSO\3 - Tooling\01 - Projet\48 - DECA standardisation\Standardisation Service\02_TOOLS_DEFINITIONS\Extracts\export_complet_MM03.xlsx",
+    r"U:\DIR_TECH\01 - PSO\3 - Tooling\01 - Projet\48 - DECA standardisation\Standardisation Service\02_TOOLS_DEFINITIONS\Extracts\export_complet_SM57.xlsx",
+    r"U:\DIR_TECH\01 - PSO\3 - Tooling\01 - Projet\48 - DECA standardisation\Standardisation Service\02_TOOLS_DEFINITIONS\Extracts\export_complet_SM58.xlsx",
+    r"U:\DIR_TECH\01 - PSO\3 - Tooling\01 - Projet\48 - DECA standardisation\Standardisation Service\02_TOOLS_DEFINITIONS\Extracts\export_complet_SM59.xlsx",
 ]
 
 # CSV brut DECA (celui dans 01_DATA_SOURCES/DECA_Extracts/CSV)
-DECA_CSV = r"C:\chemin\vers\extract_DECA_global.csv"
+DECA_CSV = r"U:\DIR_TECH\01 - PSO\3 - Tooling\01 - Projet\48 - DECA standardisation\Standardisation Service\01_DATA_SOURCES\DECA_Extracts\CSV\Extract_DECA_02-Aug.csv"
 
-# Fichier de sortie (None = même dossier que le script)
+# Fichier de sortie (None = racine du projet)
 OUTPUT = None
 
 # Décalage des ct_string (0 = pas de décalage, 1 = décalé d'une colonne, etc.)
