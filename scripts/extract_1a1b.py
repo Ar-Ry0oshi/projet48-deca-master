@@ -175,6 +175,7 @@ def main():
     final_cols = ["Marquage", "PN", "Réf constructeur", "Modules",
                   "Statut", "N.Service 1", "N.Service 2", "N.Service 3", "N.Service 4",
                   "Etat", "1A ou 1B"]
+    Path(OUTPUT).parent.mkdir(parents=True, exist_ok=True)
     df_out[final_cols].to_excel(OUTPUT, index=False)
     print(f"\n✓ Export terminé → {OUTPUT}")
     print(f"  {len(df_out)} lignes  ·  {df_out['1A ou 1B'].value_counts().to_dict()}")
