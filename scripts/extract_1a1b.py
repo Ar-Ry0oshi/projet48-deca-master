@@ -30,8 +30,8 @@ EXPORT_FILES = [
 # CSV brut DECA (celui dans 01_DATA_SOURCES/DECA_Extracts/CSV)
 DECA_CSV = r"U:\DIR_TECH\01 - PSO\3 - Tooling\01 - Projet\48 - DECA standardisation\Standardisation Service\01_DATA_SOURCES\DECA_Extracts\CSV\Extract_DECA_02-Aug.csv"
 
-# Fichier de sortie (None = racine du projet)
-OUTPUT = None
+# Fichier de sortie
+OUTPUT = r"U:\DIR_TECH\01 - PSO\3 - Tooling\01 - Projet\48 - DECA standardisation\Standardisation Service\02_TOOLS_DEFINITIONS\Extracts\extract_1a1b.xlsx"
 
 # Décalage des ct_string (0 = pas de décalage, 1 = décalé d'une colonne, etc.)
 # Lancer d'abord avec DIAGNOSTIC=True pour vérifier
