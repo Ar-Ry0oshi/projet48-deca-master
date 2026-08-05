@@ -30,8 +30,8 @@ EXPORT_FILES = [
 # CSV brut DECA (celui dans 01_DATA_SOURCES/DECA_Extracts/CSV)
 DECA_CSV = r"C:\chemin\vers\extract_DECA_global.csv"
 
-# Fichier de sortie
-OUTPUT = r"C:\chemin\vers\extract_1a1b.xlsx"
+# Fichier de sortie (None = même dossier que le script)
+OUTPUT = None
 
 # Décalage des ct_string (0 = pas de décalage, 1 = décalé d'une colonne, etc.)
 # Lancer d'abord avec DIAGNOSTIC=True pour vérifier
@@ -175,9 +175,10 @@ def main():
     final_cols = ["Marquage", "PN", "Réf constructeur", "Modules",
                   "Statut", "N.Service 1", "N.Service 2", "N.Service 3", "N.Service 4",
                   "Etat", "1A ou 1B"]
-    Path(OUTPUT).parent.mkdir(parents=True, exist_ok=True)
-    df_out[final_cols].to_excel(OUTPUT, index=False)
-    print(f"\n✓ Export terminé → {OUTPUT}")
+    out = Path(OUTPUT) if OUTPUT else Path(__file__).parent.parent / "extract_1a1b.xlsx"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    df_out[final_cols].to_excel(out, index=False)
+    print(f"\n✓ Export terminé → {out}")
     print(f"  {len(df_out)} lignes  ·  {df_out['1A ou 1B'].value_counts().to_dict()}")
 
 
