@@ -66,26 +66,22 @@ def detect_ct_columns(df: pd.DataFrame):
 
 def compute_1a1b(df: pd.DataFrame, ct_cols: list[str], offset: int) -> pd.Series:
     """
-    ct_string8 (index 7 dans ct_cols) + offset → 1B (GC / LEAP 1B)
-    ct_string9 (index 8 dans ct_cols) + offset → 1A (GD / LEAP 1A)
+    ct_string8 (index 7) → 1B (LEAP 1B)
+    ct_string9 (index 8) → 1A (LEAP 1A)
     """
-    idx_1b = 7 + offset   # ct_string8
-    idx_1a = 8 + offset   # ct_string9
+    idx_1b = 7 + offset
+    idx_1a = 8 + offset
+    col_1b = ct_cols[idx_1b] if idx_1b < len(ct_cols) else None
+    col_1a = ct_cols[idx_1a] if idx_1a < len(ct_cols) else None
 
-    def _flag(row):
-        has_1b = (idx_1b < len(ct_cols) and
-                  str(row.get(ct_cols[idx_1b], "")).strip().upper() == "O")
-        has_1a = (idx_1a < len(ct_cols) and
-                  str(row.get(ct_cols[idx_1a], "")).strip().upper() == "O")
-        if has_1a and has_1b:
-            return "1A+1B"
-        if has_1a:
-            return "1A"
-        if has_1b:
-            return "1B"
-        return ""
+    has_1b = df[col_1b].str.strip().str.upper().eq("O") if col_1b else pd.Series(False, index=df.index)
+    has_1a = df[col_1a].str.strip().str.upper().eq("O") if col_1a else pd.Series(False, index=df.index)
 
-    return df.apply(_flag, axis=1)
+    result = pd.Series("", index=df.index)
+    result[has_1b & ~has_1a]  = "1B"
+    result[~has_1b & has_1a]  = "1A"
+    result[has_1b & has_1a]   = "1A+1B"
+    return result
 
 
 def main():
@@ -106,12 +102,15 @@ def main():
     print(f"  → {len(df_app)} lignes chargées depuis les exports appli")
 
     # Colonnes attendues dans l'export appli
-    keep_app = ["Marquage", "PN", "Réf constructeur", "Modules",
-                "Statut", "N.Service 1", "N.Service 2", "N.Service 3", "N.Service 4"]
-    missing = [c for c in keep_app if c not in df_app.columns]
-    if missing:
-        print(f"[WARN] Colonnes manquantes dans l'export appli : {missing}")
-        for c in missing:
+    keep_app = [
+        "Marquage", "PN", "Réf constructeur", "Modules", "Statut",
+        "Svc 1", "Svc 2", "Svc 3 actuel", "Svc 4",
+        "Loc 1", "Loc 2", "Loc 3", "Loc 4",
+        "N.Service 1", "N.Service 2", "N.Service 3", "N.Service 4",
+    ]
+    for c in keep_app:
+        if c not in df_app.columns:
+            print(f"[WARN] Colonne manquante dans l'export appli, ajoutée vide : {c}")
             df_app[c] = ""
     df_app = df_app[keep_app].copy()
 
@@ -172,9 +171,13 @@ def main():
     print(f"  Jointure : {n_matched}/{len(df_out)} lignes matchées dans le CSV brut")
 
     # ── 5. Export Excel ──────────────────────────────────────────────
-    final_cols = ["Marquage", "PN", "Réf constructeur", "Modules",
-                  "Statut", "N.Service 1", "N.Service 2", "N.Service 3", "N.Service 4",
-                  "Etat", "1A ou 1B"]
+    final_cols = [
+        "Marquage", "PN", "Réf constructeur", "Modules", "Statut",
+        "Svc 1", "Svc 2", "Svc 3 actuel", "Svc 4",
+        "Loc 1", "Loc 2", "Loc 3", "Loc 4",
+        "N.Service 1", "N.Service 2", "N.Service 3", "N.Service 4",
+        "Etat", "1A ou 1B",
+    ]
     out = Path(OUTPUT) if OUTPUT else Path(__file__).parent.parent / "extract_1a1b.xlsx"
     out.parent.mkdir(parents=True, exist_ok=True)
     df_out[final_cols].to_excel(out, index=False)
