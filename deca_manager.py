@@ -2208,9 +2208,9 @@ class MainWindow(QMainWindow):
             for pn in pns_in_group:
                 mqs = pn_data[pn]["marquages"]
                 statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
-                all_valide  = bool(statuses) and all(s == "VALIDÉ"    for s in statuses)
-                all_done    = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
-                any_pcheck  = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_valide
+                all_valide  = bool(statuses) and all(s in ("VALIDÉ", "EN PRÊT") for s in statuses)
+                all_done    = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE", "EN PRÊT") for s in statuses)
+                any_pcheck  = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_done
                 done = all_done
                 count = len(mqs)
                 icon = "✓" if all_valide else ("◑" if any_pcheck else " ")
@@ -2353,9 +2353,9 @@ class MainWindow(QMainWindow):
         """Met à jour uniquement l'item PN concerné — sans reconstruire toute la liste."""
         decs = queries.get_decisions_for_pn_in_module(pn, self._module)
         statuses = [r["decision"] for r in decs if r["decision"]]
-        all_valide = bool(statuses) and all(s == "VALIDÉ" for s in statuses)
+        all_valide = bool(statuses) and all(s in ("VALIDÉ", "EN PRÊT") for s in statuses)
         any_pcheck = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_valide
-        done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+        done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE", "EN PRÊT") for s in statuses)
         count = len(decs)
 
         for item in self._pn_items:
