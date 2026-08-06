@@ -18,13 +18,14 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFileDialog, QAbstractItemView, QStatusBar,
     QDialog, QGridLayout, QScrollArea, QMenu, QFrame, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QThread, QObject, QEvent, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QObject, QEvent, pyqtSignal, QUrl
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtGui import QColor, QFont, QPalette, QPixmap, QAction, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QCompleter
 
 import pandas as pd
 
-from config import MODULES, PHOTOS_DIR, DATA_DIR
+from config import MODULES, PHOTOS_DIR, DOCS_DIR, DATA_DIR
 from db import queries
 from services import (
     svc3_labeled_options, svc3_from_label, svc3_label,
@@ -103,6 +104,23 @@ def _find_photos(marquage: str) -> list[Path]:
     return results
 
 
+# ── Recherche documentation PDF ───────────────────────────────────────────────
+
+@lru_cache(maxsize=1)
+def _doc_index() -> list[Path]:
+    if not DOCS_DIR or not DOCS_DIR.exists():
+        return []
+    return sorted(DOCS_DIR.glob("*.pdf")) + sorted(DOCS_DIR.glob("*.PDF"))
+
+
+def _find_docs(pn: str) -> list[Path]:
+    """Cherche les PDFs dont le nom contient le PN (ex: DME-58828-{PN}-LEAP-...)."""
+    if not pn:
+        return []
+    pn_norm = pn.strip().upper()
+    return [f for f in _doc_index() if pn_norm in f.stem.upper()]
+
+
 # ── Fiche outil ───────────────────────────────────────────────────────────────
 
 class DECADetailDialog(QDialog):
@@ -174,6 +192,13 @@ class DECADetailDialog(QDialog):
         photo_nav.addWidget(self.lbl_photo_ctr, stretch=1)
         photo_nav.addWidget(self.btn_next_photo)
         photo_panel.addLayout(photo_nav)
+
+        self.btn_doc = QPushButton("📄  Documentation")
+        self.btn_doc.setToolTip("Ouvrir le PDF de documentation OEM")
+        self.btn_doc.clicked.connect(self._open_doc)
+        self.btn_doc.setEnabled(False)
+        self._docs: list[Path] = []
+        photo_panel.addWidget(self.btn_doc)
 
         body.addLayout(photo_panel, stretch=2)
         root.addLayout(body)
@@ -276,6 +301,19 @@ class DECADetailDialog(QDialog):
         self._photo_idx = 0
         self._show_photo()
 
+        # Documentation PDF
+        pn = tool_d.get("pn_short", "")
+        self._docs = _find_docs(pn)
+        if self._docs:
+            n_docs = len(self._docs)
+            self.btn_doc.setText(f"📄  Documentation ({n_docs})")
+            self.btn_doc.setEnabled(True)
+            self.btn_doc.setToolTip("\n".join(f.name for f in self._docs))
+        else:
+            self.btn_doc.setText("📄  Documentation")
+            self.btn_doc.setEnabled(False)
+            self.btn_doc.setToolTip("Aucun PDF trouvé pour ce PN")
+
     def _add_section(self, title: str):
         lbl = QLabel(f"<b>{title}</b>")
         lbl.setStyleSheet("margin-top:8px; color:#1a5276;")
@@ -337,6 +375,20 @@ class DECADetailDialog(QDialog):
     def _next_photo(self):
         self._photo_idx = min(len(self._photos) - 1, self._photo_idx + 1)
         self._show_photo()
+
+    def _open_doc(self):
+        if not self._docs:
+            return
+        if len(self._docs) == 1:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._docs[0])))
+        else:
+            menu = QMenu(self)
+            for doc in self._docs:
+                act = menu.addAction(doc.name)
+                act.setData(str(doc))
+            chosen = menu.exec(self.btn_doc.mapToGlobal(self.btn_doc.rect().bottomLeft()))
+            if chosen:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(chosen.data()))
 
     def _prev_deca(self):
         if self._idx > 0:
@@ -602,6 +654,13 @@ class DECATable(QTableWidget):
         )
         act_unlock.setEnabled(drow.locked or n_locked_sel > 0)
 
+        menu.addSeparator()
+        docs = _find_docs(drow.pn_short)
+        act_doc = menu.addAction("📄  Documentation OEM")
+        act_doc.setEnabled(bool(docs))
+        if docs:
+            act_doc.setToolTip(docs[0].name if len(docs) == 1 else f"{len(docs)} PDFs disponibles")
+
         chosen = menu.exec(self.viewport().mapToGlobal(pos))
         if not chosen:
             return
@@ -667,6 +726,18 @@ class DECATable(QTableWidget):
                 parent = parent.parent()
             if parent:
                 parent._on_pn_selected(parent.pn_list.currentItem(), None)
+
+        if chosen is act_doc:
+            if len(docs) == 1:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(docs[0])))
+            else:
+                sub = QMenu(self)
+                for doc in docs:
+                    a = sub.addAction(doc.name)
+                    a.setData(str(doc))
+                picked = sub.exec(self.viewport().mapToGlobal(pos))
+                if picked:
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(picked.data()))
 
     def _column_menu(self, pos):
         menu = QMenu(self)

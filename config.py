@@ -31,6 +31,14 @@ else:
     _linux_mount = Path("/mnt/deca_photos")
     PHOTOS_DIR = _linux_mount if _linux_mount.exists() else None
 
+# Dossier documentation PDF OEM (Technical Data Sheets)
+_DOCS_WIN = r"U:\OEM Manuals\CFMI\Technical Data Sheets Tooling"
+if sys.platform == "win32":
+    DOCS_DIR: Path | None = Path(_DOCS_WIN)
+else:
+    _docs_mount = Path("/mnt/oem_docs")
+    DOCS_DIR = _docs_mount if _docs_mount.exists() else None
+
 # Expected source filenames (flexible — matched by pattern in reload_sources)
 SRC_DECA_PATTERNS = ["*DECA*.csv", "*deca*.csv", "*DECA*.xlsx", "*deca*.xlsx", "*Extract*.xlsx", "*extract*.xlsx"]
 SRC_PANOPLY_PATTERNS = ["Panoply*.xlsx", "panoply*.xlsx"]
