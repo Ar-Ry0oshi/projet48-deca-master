@@ -62,18 +62,17 @@ def get_pn_stats_for_module(module: str) -> dict:
 
     # PNs "done" : tous leurs DECAs dans ce module ont une décision finale
     done_row = db.fetchone("""
-        SELECT COUNT(DISTINCT t.pn_short) AS n_pn_done
-        FROM tools t
-        WHERE t.modules_effective LIKE ? AND t.is_excluded = 0
-          AND NOT EXISTS (
-            SELECT 1 FROM tools t3
-            LEFT JOIN decisions d ON d.marquage = t3.marquage
-            WHERE t3.pn_short = t.pn_short
-              AND t3.modules_effective LIKE ?
-              AND t3.is_excluded = 0
-              AND (d.decision IS NULL OR d.decision NOT IN ('VALIDÉ','EN ATTENTE'))
-          )
-    """, (f"%{module}%", f"%{module}%"))
+        SELECT COUNT(*) AS n_pn_done FROM (
+            SELECT t.pn_short
+            FROM tools t
+            LEFT JOIN decisions d ON d.marquage = t.marquage
+            WHERE t.modules_effective LIKE ? AND t.is_excluded = 0
+            GROUP BY t.pn_short
+            HAVING SUM(
+                CASE WHEN d.decision IN ('VALIDÉ','EN ATTENTE','EN PRÊT') THEN 0 ELSE 1 END
+            ) = 0
+        )
+    """, (f"%{module}%",))
     base["n_pn_done"] = dict(done_row)["n_pn_done"] if done_row else 0
     return base
 

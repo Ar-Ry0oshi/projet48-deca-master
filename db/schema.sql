@@ -81,6 +81,8 @@ CREATE TABLE IF NOT EXISTS changelog (
 CREATE INDEX IF NOT EXISTS idx_tools_pn      ON tools(pn_short);
 CREATE INDEX IF NOT EXISTS idx_tools_excl    ON tools(is_excluded);
 CREATE INDEX IF NOT EXISTS idx_tools_complex ON tools(complexity_flag);
+CREATE INDEX IF NOT EXISTS idx_tools_excl_pn ON tools(is_excluded, pn_short);
 CREATE INDEX IF NOT EXISTS idx_dec_pn        ON decisions(pn_short);
 CREATE INDEX IF NOT EXISTS idx_dec_status    ON decisions(decision);
 CREATE INDEX IF NOT EXISTS idx_dec_module    ON decisions(module_context);
+CREATE INDEX IF NOT EXISTS idx_dec_marquage  ON decisions(marquage, decision);
