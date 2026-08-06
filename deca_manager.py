@@ -595,9 +595,12 @@ class DECATable(QTableWidget):
             act_adopt_all = None
             act_lent = None
 
-        act_unlock = menu.addAction("🔓  Déverrouiller cette ligne")
-        if not drow.locked:
-            act_unlock.setEnabled(False)
+        n_locked_sel = sum(1 for d in sel_drows if d.locked)
+        act_unlock = menu.addAction(
+            f"🔓  Déverrouiller {n_locked_sel} ligne(s) sélectionnée(s)"
+            if n_locked_sel > 1 else "🔓  Déverrouiller cette ligne"
+        )
+        act_unlock.setEnabled(drow.locked or n_locked_sel > 0)
 
         chosen = menu.exec(self.viewport().mapToGlobal(pos))
         if not chosen:
@@ -644,14 +647,21 @@ class DECATable(QTableWidget):
             return
 
         if chosen is act_unlock:
+            locked_sel = [d for d in sel_drows if d.locked]
+            if not locked_sel:
+                locked_sel = [drow]
+            n = len(locked_sel)
+            msg = (f"Déverrouiller {n} ligne(s) sélectionnée(s) ?\n\nLes décisions seront remises en EN COURS."
+                   if n > 1 else
+                   f"Déverrouiller  {drow.marquage}  ?\n\nLa décision sera remise en EN COURS.")
             confirm = QMessageBox.question(
-                self, "Déverrouiller",
-                f"Déverrouiller  {drow.marquage}  ?\n\nLa décision sera remise en EN COURS.",
+                self, "Déverrouiller", msg,
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if confirm != QMessageBox.StandardButton.Yes:
                 return
-            queries.reset_decision(drow.marquage, reset_by="manager_user")
+            for d in locked_sel:
+                queries.reset_decision(d.marquage, reset_by="manager_user")
             parent = self.parent()
             while parent and not isinstance(parent, MainWindow):
                 parent = parent.parent()
@@ -1526,7 +1536,7 @@ class BatchApplyDialog(QDialog):
         for pn, d in sorted(pn_data.items()):
             mqs = d["marquages"]
             statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
-            done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE") for s in statuses)
+            done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE", "EN PRÊT") for s in statuses)
             self._pn_meta[pn] = {"marquages": mqs, "done": done, "complexity": d["complexity"]}
 
             item = QListWidgetItem()
