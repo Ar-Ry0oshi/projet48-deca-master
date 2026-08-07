@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
-from config import MODULES, DECA_EXTRACTS_DIR, SERVICES_REF_PATH
+from config import MODULES, DECA_EXTRACTS_DIR, SERVICES_REF_PATH, EXCLUDED_ETATS
 from db import queries
 
 # ── Palette ──────────────────────────────────────────────────────────────────
@@ -592,9 +592,12 @@ def _read_deca_csv(raw: bytes) -> pd.DataFrame:
     for c in _SVC_COLS:
         if c not in df.columns:
             df[c] = ""
-    df = df[[c for c in ["marquage"] + _SVC_COLS if c in df.columns]]
+    keep = [c for c in ["marquage", "etat"] + _SVC_COLS if c in df.columns]
+    df = df[keep]
     for c in _SVC_COLS:
         df[c] = df[c].str.strip()
+    if "etat" in df.columns:
+        df["etat"] = df["etat"].str.strip().str.upper()
     return df
 
 
@@ -616,6 +619,8 @@ def _load_ref() -> dict[str, set]:
 
 
 def _compute_kpi(df: pd.DataFrame, ref: dict, bat: str) -> dict:
+    if "etat" in df.columns:
+        df = df[~df["etat"].isin(EXCLUDED_ETATS)]
     if bat != "ALL":
         kw = _BAT_KW[bat]
         df = df[df["service1"].str.contains(kw, case=False, na=False)]
