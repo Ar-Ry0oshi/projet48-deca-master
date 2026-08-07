@@ -1,22 +1,15 @@
 @echo off
-title DECA Manager
 cd /d "%~dp0"
-
-echo.
-echo  ==========================================
-echo   DECA Manager - PSO Tooling SAESB
-echo  ==========================================
-echo.
 
 set PYTHON=C:\SafApp\Python\Python3.14-64\python.exe
 if not exist "%PYTHON%" set PYTHON=python
 
-echo  Verification des dependances...
 "%PYTHON%" -c "import PyQt6, pandas, openpyxl, matplotlib" >nul 2>&1
 if errorlevel 1 (
-    echo  Installation en cours...
+    echo  Installation des dependances...
     "%PYTHON%" -m pip install --quiet PyQt6 pandas openpyxl matplotlib
+    echo  Demarrage DECA Manager...
+    start "" "%PYTHON%" deca_manager.py
+) else (
+    wscript "%~dp0DECA Manager.vbs"
 )
-
-echo  Demarrage DECA Manager...
-start "" "%PYTHON%" deca_manager.py
