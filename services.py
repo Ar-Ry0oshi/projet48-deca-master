@@ -28,6 +28,23 @@ def _load() -> dict:
 
     df = pd.read_excel(_SRC, dtype=str)
     df = df.fillna("").apply(lambda col: col.str.strip())
+    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "").str.replace("_", "")
+    # normalise service1..4 — accepte "service1", "svc1", "s1", "service 1", etc.
+    _aliases = {
+        "service1": ["service1", "svc1", "s1", "srv1"],
+        "service2": ["service2", "svc2", "s2", "srv2"],
+        "service3": ["service3", "svc3", "s3", "srv3"],
+        "service4": ["service4", "svc4", "s4", "srv4"],
+    }
+    for canonical, aliases in _aliases.items():
+        if canonical not in df.columns:
+            for alias in aliases:
+                if alias in df.columns:
+                    df = df.rename(columns={alias: canonical})
+                    break
+    for col in ["service1", "service2", "service3", "service4"]:
+        if col not in df.columns:
+            df[col] = ""
 
     svc3_to_svc1: dict[str, list[str]] = {}
     svc3_to_svc2: dict[str, list[str]] = {}
@@ -184,7 +201,7 @@ def _ref_set() -> frozenset:
     if not _SRC.exists():
         return frozenset()
     df = pd.read_excel(_SRC, dtype=str).fillna("").apply(lambda c: c.str.strip())
-    cols = [c for c in ["service1", "service2", "service3", "service4"] if c in df.columns]
+    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "").str.replace("_", "")
     for c in ["service1", "service2", "service3", "service4"]:
         if c not in df.columns:
             df[c] = ""
