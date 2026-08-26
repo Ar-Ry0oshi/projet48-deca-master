@@ -8,8 +8,7 @@ if not exist "%PYTHON%" set PYTHON=python
 if errorlevel 1 (
     echo  Installation des dependances...
     "%PYTHON%" -m pip install --quiet PyQt6 pandas openpyxl matplotlib
-    echo  Demarrage DECA Stats...
-    start "" "%PYTHON%" stats_app.py
-) else (
-    wscript "%~dp0DECA Stats.vbs"
 )
+
+echo  Demarrage DECA Stats...
+start "" "%PYTHON%" stats_app.py
