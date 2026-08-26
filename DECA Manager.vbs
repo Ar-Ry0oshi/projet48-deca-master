@@ -12,7 +12,7 @@ If Not fso.FileExists(py) Then
     pytw = "pythonw"
 End If
 
-rc = shell.Run(q & py & q & " -c " & q & "import PyQt6, pandas, openpyxl, matplotlib" & q, 0, True)
+rc = shell.Run(q & py & q & " -c " & q & "import PyQt6, pandas, openpyxl, matplotlib, fitz" & q, 0, True)
 If rc <> 0 Then
     shell.Run q & root & "\lancer_manager.bat" & q, 1, False
 Else

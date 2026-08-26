@@ -4,10 +4,10 @@ cd /d "%~dp0"
 set PYTHON=C:\SafApp\Python\Python3.14-64\python.exe
 if not exist "%PYTHON%" set PYTHON=python
 
-"%PYTHON%" -c "import PyQt6, pandas, openpyxl, matplotlib" >nul 2>&1
+"%PYTHON%" -c "import PyQt6, pandas, openpyxl, matplotlib, fitz" >nul 2>&1
 if errorlevel 1 (
     echo  Installation des dependances...
-    "%PYTHON%" -m pip install --quiet PyQt6 pandas openpyxl matplotlib
+    "%PYTHON%" -m pip install --quiet PyQt6 pandas openpyxl matplotlib pymupdf
     echo  Demarrage DECA Manager...
     start "" "%PYTHON%" deca_manager.py
 ) else (

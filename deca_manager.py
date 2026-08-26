@@ -2014,6 +2014,7 @@ class MainWindow(QMainWindow):
         act_export  = QAction("📋  Export complet du module",    self)
         act_model   = QAction("📥  Export modèle d'import",      self)
         act_stats   = QAction("📊  Ouvrir les Statistiques",     self)
+        act_plan    = QAction("🗺️  Mode Plan (assignation S4)",   self)
         act_reload.setToolTip("Remplace les fichiers sources et recharge la base")
         act_sprint.setToolTip("Vue plate de tous les PNs avec peu de DECAs")
         act_batch.setToolTip("Appliquer N.Service 3/4 à plusieurs PNs d'un coup")
@@ -2023,6 +2024,7 @@ class MainWindow(QMainWindow):
         act_export.triggered.connect(self._export_full)
         act_model.triggered.connect(self._export_model)
         act_stats.triggered.connect(self._open_stats)
+        act_plan.triggered.connect(self._open_plan)
         menu_more.addAction(act_reload)
         menu_more.addSeparator()
         menu_more.addAction(act_sprint)
@@ -2032,6 +2034,7 @@ class MainWindow(QMainWindow):
         menu_more.addAction(act_model)
         menu_more.addSeparator()
         menu_more.addAction(act_stats)
+        menu_more.addAction(act_plan)
         btn_more.setMenu(menu_more)
         self._act_reload_src = act_reload   # pour le tooltip source
         top.addWidget(btn_more)
@@ -2509,6 +2512,11 @@ class MainWindow(QMainWindow):
             self._stats_win = StatsWindow()
         self._stats_win.show()
         self._stats_win.raise_()
+
+    def _open_plan(self):
+        from plan_window import PlanWindow
+        win = PlanWindow(module=self._module, parent=self)
+        win.show()
 
 
 # ── Entrée ────────────────────────────────────────────────────────────────────
