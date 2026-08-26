@@ -17,11 +17,12 @@ from PyQt6.QtWidgets import (
     QGraphicsPolygonItem, QGraphicsTextItem,
     QPushButton, QLabel, QTreeWidget, QTreeWidgetItem, QLineEdit,
     QAbstractItemView, QSplitter, QMessageBox, QFileDialog,
-    QWidget, QInputDialog, QSizePolicy,
+    QWidget, QInputDialog, QSizePolicy, QHeaderView,
 )
-from PyQt6.QtCore import Qt, QPointF, pyqtSignal
+from PyQt6.QtCore import Qt, QPointF, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QPolygonF, QColor, QPen, QBrush, QPixmap, QFont, QCursor, QPainter,
+    QDesktopServices,
 )
 
 try:
@@ -30,7 +31,21 @@ try:
 except ImportError:
     FITZ_OK = False
 
+from functools import lru_cache
 from db import queries
+from config import DOCS_DIR
+
+@lru_cache(maxsize=1)
+def _doc_index() -> list:
+    if not DOCS_DIR or not DOCS_DIR.exists():
+        return []
+    return sorted(DOCS_DIR.glob("*.pdf")) + sorted(DOCS_DIR.glob("*.PDF"))
+
+def _find_docs(pn: str) -> list:
+    if not pn:
+        return []
+    pn_norm = pn.strip().upper()
+    return [f for f in _doc_index() if pn_norm in f.stem.upper()]
 
 # ── Palette de couleurs pour les zones ───────────────────────────────────────
 
@@ -222,10 +237,16 @@ class PlanView(QGraphicsView):
 
 # ── Panel latéral (sélection DECAs) ──────────────────────────────────────────
 
+# Colonnes : Marquage | Loc 1 | Loc 2 | Loc 3 | Svc 4 assigné
+_COLS      = ["Marquage", "Loc 1", "Loc 2", "Loc 3", "Svc 4 assigné"]
+_COL_W     = [130, 70, 70, 70, 100]
+
+
 class DECAPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._module = ""
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(4)
@@ -240,10 +261,15 @@ class DECAPanel(QWidget):
         lay.addWidget(self._search)
 
         self._tree = QTreeWidget()
-        self._tree.setHeaderLabels(["PN / Marquage", "Svc 4 actuel"])
+        self._tree.setHeaderLabels(_COLS)
         self._tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._tree.header().setStretchLastSection(True)
-        self._tree.setColumnWidth(0, 170)
+        self._tree.setAlternatingRowColors(True)
+        self._tree.setUniformRowHeights(True)
+        hdr = self._tree.header()
+        hdr.setStretchLastSection(True)
+        for i, w in enumerate(_COL_W):
+            self._tree.setColumnWidth(i, w)
+        self._tree.itemDoubleClicked.connect(self._on_double_click)
         lay.addWidget(self._tree, stretch=1)
 
         self._lbl_count = QLabel("")
@@ -251,6 +277,7 @@ class DECAPanel(QWidget):
         lay.addWidget(self._lbl_count)
 
     def load(self, module: str = ""):
+        self._module  = module
         self._tree.clear()
         rows = queries.get_all_tools_for_export(module)
         pn_map: dict[str, list] = {}
@@ -259,21 +286,61 @@ class DECAPanel(QWidget):
             pn_map.setdefault(pn, []).append(r)
 
         for pn, tools in sorted(pn_map.items()):
-            pn_item = QTreeWidgetItem([pn, ""])
-            pn_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "pn", "pn": pn})
+            # ── Ligne PN ──────────────────────────────────────────────────
+            docs  = _find_docs(pn)
+            tds   = f"  📄 ({len(docs)})" if docs else ""
+            pn_item = QTreeWidgetItem([pn + tds, "", "", "", ""])
+            pn_item.setData(0, Qt.ItemDataRole.UserRole,
+                            {"type": "pn", "pn": pn, "docs": docs})
             f = QFont(); f.setBold(True)
             pn_item.setFont(0, f)
+            if docs:
+                pn_item.setToolTip(0, "\n".join(d.name for d in docs))
             self._tree.addTopLevelItem(pn_item)
+
+            # ── Lignes DECA ───────────────────────────────────────────────
+            marquages = [t["marquage"] for t in tools]
             for t in tools:
-                marq = t["marquage"]
-                svc4 = t["n_service4"] or t["service4"] or ""
-                child = QTreeWidgetItem([marq, svc4])
+                marq  = t["marquage"]
+                loc1  = t["localisation1"] or ""
+                loc2  = t["localisation2"] or ""
+                loc3  = t["localisation3"] or ""
+                svc4  = t["n_service4"] or t["service4"] or ""
+                child = QTreeWidgetItem([marq, loc1, loc2, loc3, svc4])
                 child.setData(0, Qt.ItemDataRole.UserRole,
                               {"type": "deca", "marquage": marq, "pn": pn,
-                               "row": dict(t)})
+                               "all_marquages": marquages, "row": dict(t)})
                 pn_item.addChild(child)
 
-        self._lbl_count.setText(f"{len(rows)} DECAs — cliquez pour sélectionner")
+        self._lbl_count.setText(
+            f"{len(rows)} DECAs  ·  double-clic = fiche  ·  clic PN 📄 = TDS")
+
+    def _on_double_click(self, item: QTreeWidgetItem, col: int):
+        d = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        if d.get("type") == "deca":
+            # ouvrir la fiche outil
+            from deca_manager import DECADetailDialog
+            marq = d["marquage"]
+            dlg  = DECADetailDialog(marq, d.get("all_marquages", [marq]),
+                                    parent=self)
+            dlg.exec()
+        elif d.get("type") == "pn":
+            # ouvrir TDS
+            docs = d.get("docs", [])
+            if not docs:
+                return
+            if len(docs) == 1:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(docs[0])))
+            else:
+                from PyQt6.QtWidgets import QMenu
+                menu = QMenu(self)
+                for doc in docs:
+                    act = menu.addAction(doc.name)
+                    act.setData(str(doc))
+                chosen = menu.exec(self._tree.viewport().mapToGlobal(
+                    self._tree.visualItemRect(item).bottomLeft()))
+                if chosen:
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(chosen.data()))
 
     def selected_marquages(self) -> list[str]:
         result = []
