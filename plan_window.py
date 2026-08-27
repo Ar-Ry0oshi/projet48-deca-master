@@ -395,7 +395,11 @@ class PlanWindow(QDialog):
     def __init__(self, module: str = "", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Mode Plan — Assignation Service 4")
-        self.setWindowFlag(Qt.WindowType.Window)   # fenêtre indépendante redimensionnable
+        self.setWindowFlags(
+            Qt.WindowType.Window |
+            Qt.WindowType.WindowCloseButtonHint |
+            Qt.WindowType.WindowMinMaxButtonsHint
+        )
         self.resize(1400, 900)
         self._module      = module
         self._building    = ""   # "MF" ou "LSO"

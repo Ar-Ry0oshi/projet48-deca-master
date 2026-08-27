@@ -2084,7 +2084,15 @@ class MainWindow(QMainWindow):
         left.setFixedWidth(300)
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 6, 0)
-        ll.addWidget(QLabel("<b>PNs du module</b>"))
+        pn_hdr = QHBoxLayout()
+        pn_hdr.addWidget(QLabel("<b>PNs du module</b>"))
+        pn_hdr.addStretch()
+        btn_refresh_pn = QPushButton("🔄")
+        btn_refresh_pn.setFixedSize(26, 26)
+        btn_refresh_pn.setToolTip("Rafraîchir les couleurs de la liste PN depuis la base de données")
+        btn_refresh_pn.clicked.connect(lambda: (self._reload_pn_list(), self._update_stats()))
+        pn_hdr.addWidget(btn_refresh_pn)
+        ll.addLayout(pn_hdr)
         self.search_pn = QLineEdit()
         self.search_pn.setPlaceholderText("🔍 Rechercher un PN…")
         self.search_pn.textChanged.connect(self._filter_list)
@@ -2248,9 +2256,9 @@ class MainWindow(QMainWindow):
             _add_separator(f"{label}  {g_done}/{g_total}")
             for pn in pns_in_group:
                 mqs = pn_data[pn]["marquages"]
-                # Inclure TOUS les marquages : ceux sans décision comptent comme "EN COURS"
+                # Inclure TOUS les marquages ; None/absent → "EN COURS"
                 statuses = [
-                    decisions[m]["decision"] if m in decisions else "EN COURS"
+                    (decisions[m].get("decision") or "EN COURS") if m in decisions else "EN COURS"
                     for m in mqs
                 ]
                 all_valide  = bool(statuses) and all(s in ("VALIDÉ", "EN PRÊT") for s in statuses)
@@ -2424,8 +2432,8 @@ class MainWindow(QMainWindow):
     def _refresh_pn_item(self, pn: str, decision_val: str):
         """Met à jour uniquement l'item PN concerné — sans reconstruire toute la liste."""
         decs = queries.get_decisions_for_pn_in_module(pn, self._module)
-        # Inclure les outils sans décision comme "EN COURS" pour ne pas masquer les trous
-        statuses = [r["decision"] if r["decision"] else "EN COURS" for r in decs]
+        # Inclure les outils sans décision (NULL ou absent) comme "EN COURS"
+        statuses = [(r.get("decision") or "EN COURS") for r in decs]
         _DONE = ("VALIDÉ", "EN ATTENTE", "EN PRÊT")
         all_valide = bool(statuses) and all(s in ("VALIDÉ", "EN PRÊT") for s in statuses)
         any_pcheck = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_valide
