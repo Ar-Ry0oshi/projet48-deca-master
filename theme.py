@@ -17,7 +17,26 @@ def apply_light(app=None):
     if not a:
         return
     a.setStyle("Fusion")
-    a.setPalette(a.style().standardPalette())
+    pal = QPalette()
+    W = QColor(255, 255, 255)
+    B = QColor(0, 0, 0)
+    pal.setColor(QPalette.ColorRole.Window,          QColor(240, 240, 240))
+    pal.setColor(QPalette.ColorRole.WindowText,      B)
+    pal.setColor(QPalette.ColorRole.Base,            W)
+    pal.setColor(QPalette.ColorRole.AlternateBase,   QColor(233, 233, 233))
+    pal.setColor(QPalette.ColorRole.ToolTipBase,     W)
+    pal.setColor(QPalette.ColorRole.ToolTipText,     B)
+    pal.setColor(QPalette.ColorRole.Text,            B)
+    pal.setColor(QPalette.ColorRole.Button,          QColor(240, 240, 240))
+    pal.setColor(QPalette.ColorRole.ButtonText,      B)
+    pal.setColor(QPalette.ColorRole.BrightText,      Qt.GlobalColor.red)
+    pal.setColor(QPalette.ColorRole.Link,            QColor(0, 0, 255))
+    pal.setColor(QPalette.ColorRole.Highlight,       QColor(42, 130, 218))
+    pal.setColor(QPalette.ColorRole.HighlightedText, W)
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor(128, 128, 128))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text,       QColor(128, 128, 128))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(128, 128, 128))
+    a.setPalette(pal)
     a.setStyleSheet("")
 
 
