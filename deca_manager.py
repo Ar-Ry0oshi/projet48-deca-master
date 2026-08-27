@@ -2258,7 +2258,7 @@ class MainWindow(QMainWindow):
                 mqs = pn_data[pn]["marquages"]
                 # Inclure TOUS les marquages ; None/absent → "EN COURS"
                 statuses = [
-                    (decisions[m].get("decision") or "EN COURS") if m in decisions else "EN COURS"
+                    (decisions[m]["decision"] or "EN COURS") if m in decisions else "EN COURS"
                     for m in mqs
                 ]
                 all_valide  = bool(statuses) and all(s in ("VALIDÉ", "EN PRÊT") for s in statuses)
@@ -2433,7 +2433,7 @@ class MainWindow(QMainWindow):
         """Met à jour uniquement l'item PN concerné — sans reconstruire toute la liste."""
         decs = queries.get_decisions_for_pn_in_module(pn, self._module)
         # Inclure les outils sans décision (NULL ou absent) comme "EN COURS"
-        statuses = [(r.get("decision") or "EN COURS") for r in decs]
+        statuses = [(r["decision"] or "EN COURS") for r in decs]
         _DONE = ("VALIDÉ", "EN ATTENTE", "EN PRÊT")
         all_valide = bool(statuses) and all(s in ("VALIDÉ", "EN PRÊT") for s in statuses)
         any_pcheck = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_valide
