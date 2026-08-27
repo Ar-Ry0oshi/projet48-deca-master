@@ -292,11 +292,14 @@ class DECAPanel(QWidget):
         self._building = building
         self._tree.clear()
         all_rows = queries.get_all_tools_for_export(module)
-        # filtrer: si bâtiment sélectionné, exclure les outils clairement de l'autre bâtiment
+        # filtrer par bâtiment : priorité au n_service1 (décision suggérée), sinon service1 source
         other_prefix = _SVC1_PREFIX_OTHER.get(building, "")
+        def _effective_svc1(r) -> str:
+            d = dict(r)
+            return d.get("n_service1") or d.get("service1") or ""
         rows = [
             r for r in all_rows
-            if not other_prefix or not (dict(r).get("service1") or "").startswith(other_prefix)
+            if not other_prefix or not _effective_svc1(r).startswith(other_prefix)
         ]
         pn_map: dict[str, list] = {}
         for r in rows:
