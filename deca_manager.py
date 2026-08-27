@@ -2263,7 +2263,7 @@ class MainWindow(QMainWindow):
                 ]
                 all_valide  = bool(statuses) and all(s in ("VALIDÉ", "EN PRÊT") for s in statuses)
                 all_done    = bool(statuses) and all(s in _DONE_STATUSES for s in statuses)
-                any_pcheck  = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_done
+                any_pcheck  = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_valide
                 done = all_done
                 count = len(mqs)
                 icon = "✓" if all_valide else ("◑" if any_pcheck else " ")
