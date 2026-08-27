@@ -1966,6 +1966,113 @@ class GlobalSearchDialog(QDialog):
         self.accept()
 
 
+# ── Tableau de répartition par PN ─────────────────────────────────────────────
+
+class DistribWindow(QDialog):
+    """Répartition des DECAs par PN selon N.Service 3 (+ colonne Ext pour EXT WH)."""
+
+    def __init__(self, module: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Répartition DECAs — {module}")
+        self.setMinimumSize(900, 500)
+        self.setWindowFlags(
+            Qt.WindowType.Window |
+            Qt.WindowType.WindowCloseButtonHint |
+            Qt.WindowType.WindowMinMaxButtonsHint
+        )
+
+        root = QVBoxLayout(self)
+
+        # ── Build data ────────────────────────────────────────────────────────
+        rows = queries.get_all_tools_for_export(module)
+
+        # Collect distinct n_service3 values (non-EXT, non-null)
+        svc3_set: dict[str, int] = {}
+        pn_data: dict[str, dict] = {}
+
+        for r in rows:
+            pn = r["pn_short"] or ""
+            if pn not in pn_data:
+                pn_data[pn] = {"total": 0, "ext": 0, "svc3": {}}
+            pn_data[pn]["total"] += 1
+            n_svc4 = (r["n_service4"] or "").strip()
+            n_svc3 = (r["n_service3"] or "").strip()
+            if n_svc4.upper().startswith("EXT WH"):
+                pn_data[pn]["ext"] += 1
+            elif n_svc3:
+                pn_data[pn]["svc3"][n_svc3] = pn_data[pn]["svc3"].get(n_svc3, 0) + 1
+                svc3_set[n_svc3] = svc3_set.get(n_svc3, 0) + 1
+
+        # Sort svc3 columns by total usage desc
+        svc3_cols = sorted(svc3_set, key=lambda k: -svc3_set[k])
+
+        # ── Table ─────────────────────────────────────────────────────────────
+        col_headers = ["PN", "# DECAs"] + svc3_cols + ["Ext WH"]
+        table = QTableWidget(len(pn_data), len(col_headers))
+        table.setHorizontalHeaderLabels(col_headers)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        table.setSortingEnabled(True)
+
+        for row_i, (pn, d) in enumerate(sorted(pn_data.items())):
+            def _cell(val):
+                item = QTableWidgetItem()
+                item.setData(Qt.ItemDataRole.DisplayRole, val)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                return item
+
+            table.setItem(row_i, 0, QTableWidgetItem(pn))
+            table.item(row_i, 0).setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            table.setItem(row_i, 1, _cell(d["total"]))
+            for col_i, svc3 in enumerate(svc3_cols, start=2):
+                cnt = d["svc3"].get(svc3, 0)
+                item = _cell(cnt if cnt else "")
+                if cnt:
+                    item.setData(Qt.ItemDataRole.DisplayRole, cnt)
+                table.setItem(row_i, col_i, item)
+            ext_cnt = d["ext"]
+            ext_item = _cell(ext_cnt if ext_cnt else "")
+            if ext_cnt:
+                ext_item.setForeground(QColor("#166534"))
+            table.setItem(row_i, len(col_headers) - 1, ext_item)
+
+        root.addWidget(table)
+
+        # ── Totals row label ──────────────────────────────────────────────────
+        total_deca = sum(d["total"] for d in pn_data.values())
+        total_ext  = sum(d["ext"]   for d in pn_data.values())
+        svc3_totals = {s: sum(d["svc3"].get(s, 0) for d in pn_data.values()) for s in svc3_cols}
+        parts = [f"{s}: {n}" for s, n in svc3_totals.items() if n]
+        if total_ext:
+            parts.append(f"Ext WH: {total_ext}")
+        lbl = QLabel(f"Total : {total_deca} DECAs sur {len(pn_data)} PNs   |   " + "   ".join(parts))
+        lbl.setFont(QFont("", -1, QFont.Weight.Bold))
+        root.addWidget(lbl)
+
+        # ── Buttons ───────────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_copy = QPushButton("📋  Copier (TSV pour Excel)")
+        btn_copy.clicked.connect(lambda: self._copy_tsv(table, col_headers))
+        btn_close = QPushButton("Fermer")
+        btn_close.clicked.connect(self.close)
+        btn_row.addWidget(btn_copy)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_close)
+        root.addLayout(btn_row)
+
+    def _copy_tsv(self, table: QTableWidget, headers: list[str]):
+        lines = ["\t".join(headers)]
+        for r in range(table.rowCount()):
+            cells = []
+            for c in range(table.columnCount()):
+                item = table.item(r, c)
+                cells.append(str(item.data(Qt.ItemDataRole.DisplayRole)) if item else "")
+            lines.append("\t".join(cells))
+        QApplication.clipboard().setText("\n".join(lines))
+
+
 # ── Fenêtre principale ────────────────────────────────────────────────────────
 
 class MainWindow(QMainWindow):
@@ -2050,6 +2157,7 @@ class MainWindow(QMainWindow):
         act_export  = QAction("📋  Export complet du module",    self)
         act_model   = QAction("📥  Export modèle d'import",      self)
         act_stats   = QAction("📊  Ouvrir les Statistiques",     self)
+        act_distrib = QAction("📊  Répartition DECAs par PN",    self)
         act_plan    = QAction("🗺️  Mode Plan (assignation S4)",   self)
         import theme as _theme
         self._act_theme = QAction(_theme.toggle_label(), self)
@@ -2063,6 +2171,7 @@ class MainWindow(QMainWindow):
         act_export.triggered.connect(self._export_full)
         act_model.triggered.connect(self._export_model)
         act_stats.triggered.connect(self._open_stats)
+        act_distrib.triggered.connect(self._open_distrib)
         act_plan.triggered.connect(self._open_plan)
         menu_more.addAction(act_reload)
         menu_more.addSeparator()
@@ -2073,6 +2182,7 @@ class MainWindow(QMainWindow):
         menu_more.addAction(act_model)
         menu_more.addSeparator()
         menu_more.addAction(act_stats)
+        menu_more.addAction(act_distrib)
         menu_more.addAction(act_plan)
         menu_more.addSeparator()
         menu_more.addAction(self._act_theme)
@@ -2596,6 +2706,10 @@ class MainWindow(QMainWindow):
             self._stats_win = StatsWindow()
         self._stats_win.show()
         self._stats_win.raise_()
+
+    def _open_distrib(self):
+        win = DistribWindow(module=self._module, parent=self)
+        win.exec()
 
     def _open_plan(self):
         from plan_window import PlanWindow
