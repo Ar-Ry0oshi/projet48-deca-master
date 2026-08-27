@@ -2051,6 +2051,9 @@ class MainWindow(QMainWindow):
         act_model   = QAction("📥  Export modèle d'import",      self)
         act_stats   = QAction("📊  Ouvrir les Statistiques",     self)
         act_plan    = QAction("🗺️  Mode Plan (assignation S4)",   self)
+        import theme as _theme
+        self._act_theme = QAction(_theme.toggle_label(), self)
+        self._act_theme.triggered.connect(self._toggle_theme)
         act_reload.setToolTip("Remplace les fichiers sources et recharge la base")
         act_sprint.setToolTip("Vue plate de tous les PNs avec peu de DECAs")
         act_batch.setToolTip("Appliquer N.Service 3/4 à plusieurs PNs d'un coup")
@@ -2071,6 +2074,8 @@ class MainWindow(QMainWindow):
         menu_more.addSeparator()
         menu_more.addAction(act_stats)
         menu_more.addAction(act_plan)
+        menu_more.addSeparator()
+        menu_more.addAction(self._act_theme)
         btn_more.setMenu(menu_more)
         self._act_reload_src = act_reload   # pour le tooltip source
         top.addWidget(btn_more)
@@ -2596,6 +2601,11 @@ class MainWindow(QMainWindow):
         from plan_window import PlanWindow
         win = PlanWindow(module=self._module, parent=self)
         win.show()
+
+    def _toggle_theme(self):
+        import theme as _theme
+        _theme.toggle()
+        self._act_theme.setText(_theme.toggle_label())
 
 
 # ── Entrée ────────────────────────────────────────────────────────────────────
