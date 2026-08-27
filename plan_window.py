@@ -456,6 +456,18 @@ class PlanWindow(QDialog):
 
         bar.addStretch()
 
+        import theme as _theme
+        self._btn_theme = QPushButton(_theme.toggle_label())
+        self._btn_theme.setFixedHeight(30)
+        self._btn_theme.setToolTip("Basculer entre le mode clair et le mode sombre")
+        def _toggle_theme():
+            _theme.toggle()
+            self._btn_theme.setText(_theme.toggle_label())
+        self._btn_theme.clicked.connect(_toggle_theme)
+        bar.addWidget(self._btn_theme)
+
+        bar.addSpacing(8)
+
         self._lbl_mode = QLabel("Ouvrez un PDF pour commencer")
         self._lbl_mode.setStyleSheet("color:#555; font-style:italic;")
         bar.addWidget(self._lbl_mode)
