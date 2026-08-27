@@ -1969,12 +1969,19 @@ class GlobalSearchDialog(QDialog):
 # ── Tableau de répartition par PN ─────────────────────────────────────────────
 
 class DistribWindow(QDialog):
-    """Répartition des DECAs par PN selon N.Service 3 (+ colonne Ext pour EXT WH)."""
+    """Répartition des DECAs par PN selon N.Service 3 (+ colonne Ext WH + Non assigné)."""
+
+    _GROUPS = [
+        ("multi_deca",   "── Multi-DECAs ──────────────"),
+        ("multi_module", "── Multi-modules ────────────"),
+        ("unique",       "── DECA unique ──────────────"),
+        ("no_match",     "── Sans module ──────────────"),
+    ]
 
     def __init__(self, module: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Répartition DECAs — {module}")
-        self.setMinimumSize(900, 500)
+        self.setMinimumSize(900, 520)
         self.setWindowFlags(
             Qt.WindowType.Window |
             Qt.WindowType.WindowCloseButtonHint |
@@ -1984,16 +1991,18 @@ class DistribWindow(QDialog):
         root = QVBoxLayout(self)
 
         # ── Build data ────────────────────────────────────────────────────────
-        rows = queries.get_all_tools_for_export(module)
+        all_rows = queries.get_all_tools_for_export(module)
 
-        # Collect distinct n_service3 values (non-EXT, non-null)
-        svc3_set: dict[str, int] = {}
+        svc3_usage: dict[str, int] = {}
         pn_data: dict[str, dict] = {}
 
-        for r in rows:
+        for r in all_rows:
             pn = r["pn_short"] or ""
             if pn not in pn_data:
-                pn_data[pn] = {"total": 0, "ext": 0, "svc3": {}}
+                pn_data[pn] = {
+                    "total": 0, "ext": 0, "unassigned": 0,
+                    "svc3": {}, "complexity": r["complexity_flag"] or "unique",
+                }
             pn_data[pn]["total"] += 1
             n_svc4 = (r["n_service4"] or "").strip()
             n_svc3 = (r["n_service3"] or "").strip()
@@ -2001,60 +2010,106 @@ class DistribWindow(QDialog):
                 pn_data[pn]["ext"] += 1
             elif n_svc3:
                 pn_data[pn]["svc3"][n_svc3] = pn_data[pn]["svc3"].get(n_svc3, 0) + 1
-                svc3_set[n_svc3] = svc3_set.get(n_svc3, 0) + 1
+                svc3_usage[n_svc3] = svc3_usage.get(n_svc3, 0) + 1
+            else:
+                pn_data[pn]["unassigned"] += 1
 
-        # Sort svc3 columns by total usage desc
-        svc3_cols = sorted(svc3_set, key=lambda k: -svc3_set[k])
+        # svc3 columns: ordered by total usage desc
+        svc3_cols = sorted(svc3_usage, key=lambda k: -svc3_usage[k])
+
+        # ── Ordered PN list (same grouping as manager PN list) ────────────────
+        ordered_pns: list[tuple[str | None, str]] = []  # (pn_or_None, label)
+        for complexity, sep_label in self._GROUPS:
+            pns_in_group = sorted(
+                [pn for pn, d in pn_data.items() if d["complexity"] == complexity],
+                key=lambda pn: -pn_data[pn]["total"],
+            )
+            if not pns_in_group:
+                continue
+            ordered_pns.append((None, sep_label))
+            for pn in pns_in_group:
+                ordered_pns.append((pn, pn))
 
         # ── Table ─────────────────────────────────────────────────────────────
-        col_headers = ["PN", "# DECAs"] + svc3_cols + ["Ext WH"]
-        table = QTableWidget(len(pn_data), len(col_headers))
+        col_headers = ["PN", "# DECAs"] + svc3_cols + ["Ext WH", "Non assigné"]
+        n_cols = len(col_headers)
+
+        table = QTableWidget(len(ordered_pns), n_cols)
         table.setHorizontalHeaderLabels(col_headers)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setAlternatingRowColors(True)
-        table.setSortingEnabled(True)
+        table.setAlternatingRowColors(False)
+        table.setSortingEnabled(False)  # order is intentional
 
-        for row_i, (pn, d) in enumerate(sorted(pn_data.items())):
-            def _cell(val):
-                item = QTableWidgetItem()
-                item.setData(Qt.ItemDataRole.DisplayRole, val)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                return item
+        def _int_cell(val: int) -> QTableWidgetItem:
+            item = QTableWidgetItem()
+            item.setData(Qt.ItemDataRole.DisplayRole, val if val else "")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            return item
 
-            table.setItem(row_i, 0, QTableWidgetItem(pn))
-            table.item(row_i, 0).setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-            table.setItem(row_i, 1, _cell(d["total"]))
+        for row_i, (pn, label) in enumerate(ordered_pns):
+            if pn is None:
+                # Separator row
+                sep_item = QTableWidgetItem(label)
+                sep_item.setFlags(Qt.ItemFlag.NoItemFlags)
+                sep_item.setForeground(QColor("#444444"))
+                font = QFont(); font.setBold(True); font.setPointSize(8)
+                sep_item.setFont(font)
+                sep_item.setBackground(QColor("#d0d0d0"))
+                table.setItem(row_i, 0, sep_item)
+                for c in range(1, n_cols):
+                    blank = QTableWidgetItem()
+                    blank.setFlags(Qt.ItemFlag.NoItemFlags)
+                    blank.setBackground(QColor("#d0d0d0"))
+                    table.setItem(row_i, c, blank)
+                table.setSpan(row_i, 0, 1, n_cols)
+                continue
+
+            d = pn_data[pn]
+            pn_item = QTableWidgetItem(pn)
+            pn_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            table.setItem(row_i, 0, pn_item)
+            table.setItem(row_i, 1, _int_cell(d["total"]))
             for col_i, svc3 in enumerate(svc3_cols, start=2):
-                cnt = d["svc3"].get(svc3, 0)
-                item = _cell(cnt if cnt else "")
-                if cnt:
-                    item.setData(Qt.ItemDataRole.DisplayRole, cnt)
-                table.setItem(row_i, col_i, item)
-            ext_cnt = d["ext"]
-            ext_item = _cell(ext_cnt if ext_cnt else "")
-            if ext_cnt:
+                table.setItem(row_i, col_i, _int_cell(d["svc3"].get(svc3, 0)))
+            # Ext WH
+            ext_item = _int_cell(d["ext"])
+            if d["ext"]:
                 ext_item.setForeground(QColor("#166534"))
-            table.setItem(row_i, len(col_headers) - 1, ext_item)
+            table.setItem(row_i, n_cols - 2, ext_item)
+            # Non assigné
+            unass_item = _int_cell(d["unassigned"])
+            if d["unassigned"]:
+                unass_item.setForeground(QColor("#92400e"))
+            table.setItem(row_i, n_cols - 1, unass_item)
 
         root.addWidget(table)
+        self._table = table
+        self._col_headers = col_headers
+        self._ordered_pns = ordered_pns
 
-        # ── Totals row label ──────────────────────────────────────────────────
+        # ── Totals bar ────────────────────────────────────────────────────────
         total_deca = sum(d["total"] for d in pn_data.values())
         total_ext  = sum(d["ext"]   for d in pn_data.values())
-        svc3_totals = {s: sum(d["svc3"].get(s, 0) for d in pn_data.values()) for s in svc3_cols}
-        parts = [f"{s}: {n}" for s, n in svc3_totals.items() if n]
+        total_unass = sum(d["unassigned"] for d in pn_data.values())
+        parts = [f"{s}: {sum(d['svc3'].get(s,0) for d in pn_data.values())}"
+                 for s in svc3_cols
+                 if sum(d['svc3'].get(s, 0) for d in pn_data.values())]
         if total_ext:
             parts.append(f"Ext WH: {total_ext}")
-        lbl = QLabel(f"Total : {total_deca} DECAs sur {len(pn_data)} PNs   |   " + "   ".join(parts))
+        if total_unass:
+            parts.append(f"Non assigné: {total_unass}")
+        lbl = QLabel(
+            f"Total : {total_deca} DECAs — {len(pn_data)} PNs   |   " + "   ".join(parts)
+        )
         lbl.setFont(QFont("", -1, QFont.Weight.Bold))
         root.addWidget(lbl)
 
         # ── Buttons ───────────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
         btn_copy = QPushButton("📋  Copier (TSV pour Excel)")
-        btn_copy.clicked.connect(lambda: self._copy_tsv(table, col_headers))
+        btn_copy.clicked.connect(self._copy_tsv)
         btn_close = QPushButton("Fermer")
         btn_close.clicked.connect(self.close)
         btn_row.addWidget(btn_copy)
@@ -2062,13 +2117,18 @@ class DistribWindow(QDialog):
         btn_row.addWidget(btn_close)
         root.addLayout(btn_row)
 
-    def _copy_tsv(self, table: QTableWidget, headers: list[str]):
-        lines = ["\t".join(headers)]
+    def _copy_tsv(self):
+        table = self._table
+        lines = ["\t".join(self._col_headers)]
         for r in range(table.rowCount()):
+            pn_val, _ = self._ordered_pns[r]
+            if pn_val is None:
+                continue  # skip separator rows in TSV
             cells = []
             for c in range(table.columnCount()):
                 item = table.item(r, c)
-                cells.append(str(item.data(Qt.ItemDataRole.DisplayRole)) if item else "")
+                val = item.data(Qt.ItemDataRole.DisplayRole) if item else ""
+                cells.append("" if val == "" else str(val))
             lines.append("\t".join(cells))
         QApplication.clipboard().setText("\n".join(lines))
 
