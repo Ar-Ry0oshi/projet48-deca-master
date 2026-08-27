@@ -41,6 +41,8 @@ C_EN_COURS    = "#ffffff"
 C_LOCKED      = "#f0f0f0"
 C_AUTO_FILL   = "#ede9fe"   # lavande — service source valide, à adopter
 C_LENT        = "#dbeafe"   # bleu clair — outil en prêt (Loaned)
+C_SVC4_NO_SVC3 = "#ffedd5"  # orange clair — svc4 assigné depuis Mode Plan sans svc3
+C_EXT_HINT    = "#d1fae5"   # vert menthe — stockage externe détecté dans localisations
 
 # ── Index colonnes ────────────────────────────────────────────────────────────
 COL_MARQ     = 0
@@ -73,6 +75,20 @@ HEADERS = [
     "N.Service 3", "N.Service 4", "Commentaire", "Pré-check", "Statut",
 ]
 COL_WIDTHS = [100, 120, 120, 100, 100, 100, 70, 85, 85, 85, 85, 70, 60,  90, 180, 180, 130,  90, 70]
+
+
+_EXT_STORAGE_MAP = {
+    "EXPEDITORS": "EXT WH - EXPEDITORS - MACHELEN (SHORT TERM STORAGE)",
+    "ZOERSEL":    "EXT WH - NIROTRANS - ZOERSEL (LONG TERM STORAGE)",
+}
+
+def _detect_ext_storage(locs: list[str]) -> str:
+    """Returns the suggested svc4 if any location matches an external storage keyword."""
+    loc_str = " ".join(locs).upper()
+    for kw, val in _EXT_STORAGE_MAP.items():
+        if kw in loc_str:
+            return val
+    return ""
 
 
 def _ro_item(text: str, bg: str) -> QTableWidgetItem:
@@ -552,6 +568,10 @@ class DECARow:
             not self.n_svc3_plain
             and is_valid_in_ref(self.svcs[0], s2_src, self.svc3_cur, self.svcs[3])
         )
+        # stockage externe détecté dans les localisations
+        self.ext_suggestion: str = _detect_ext_storage(self.locs) if not self.n_svc4_plain else ""
+        # svc4 assigné (depuis Mode Plan p.ex.) mais sans svc3 — garde-fou visuel
+        self.has_svc4_no_svc3: bool = bool(self.n_svc4_plain and not self.n_svc3_plain)
 
         self.combo_svc3:    QComboBox | None = None
         self.combo_svc4:    QComboBox | None = None
@@ -639,12 +659,16 @@ class DECATable(QTableWidget):
             )
             act_adopt_all.setEnabled(n_auto > 0)
             menu.addSeparator()
+            act_ext = menu.addAction("🚚  Appliquer stockage externe (Expeditors / Zoersel)")
+            act_ext.setEnabled(bool(drow.ext_suggestion or _detect_ext_storage(drow.locs)))
+            menu.addSeparator()
             act_lent = menu.addAction("🔄  Marquer comme 'En prêt' (Loaned)")
         else:
             act_copy_sel = None
             act_copy_all = None
             act_adopt_one = None
             act_adopt_all = None
+            act_ext = None
             act_lent = None
 
         n_locked_sel = sum(1 for d in sel_drows if d.locked)
@@ -680,6 +704,12 @@ class DECATable(QTableWidget):
 
         if chosen is act_adopt_all:
             self.adopt_source_all()
+            return
+
+        if chosen is act_ext:
+            suggestion = _detect_ext_storage(drow.locs)
+            if suggestion and drow.combo_svc4:
+                drow.combo_svc4.setCurrentText(suggestion)
             return
 
         if chosen is act_lent:
@@ -789,8 +819,12 @@ class DECATable(QTableWidget):
             bg = C_LENT
         elif drow.locked:
             bg = C_LOCKED
+        elif drow.has_svc4_no_svc3:
+            bg = C_SVC4_NO_SVC3
         elif drow.source_auto_fillable:
             bg = C_AUTO_FILL
+        elif drow.ext_suggestion:
+            bg = C_EXT_HINT
         else:
             bg = C_EN_COURS
 
@@ -830,6 +864,8 @@ class DECATable(QTableWidget):
 
         cb4 = self._make_combo([])
         self._fill_svc4(cb4, drow.n_svc1, drow.n_svc3_plain, drow.n_svc4_plain)
+        if not drow.n_svc4_plain and drow.ext_suggestion:
+            cb4.setCurrentText(drow.ext_suggestion)
 
         ed = QLineEdit(drow.commentaire)
         ed.setFrame(False)
@@ -2203,16 +2239,22 @@ class MainWindow(QMainWindow):
             if not pns_in_group:
                 continue
             # Progression du groupe
+            _DONE_STATUSES = ("VALIDÉ", "EN ATTENTE", "EN PRÊT")
             g_done  = sum(1 for pn in pns_in_group
-                          if all(decisions.get(m, {}).get("decision") in ("VALIDÉ", "EN ATTENTE")
-                                 for m in pn_data[pn]["marquages"]))
+                          if all(decisions.get(m, {}).get("decision") in _DONE_STATUSES
+                                 for m in pn_data[pn]["marquages"])
+                          and len(pn_data[pn]["marquages"]) > 0)
             g_total = len(pns_in_group)
             _add_separator(f"{label}  {g_done}/{g_total}")
             for pn in pns_in_group:
                 mqs = pn_data[pn]["marquages"]
-                statuses = [decisions[m]["decision"] for m in mqs if m in decisions]
+                # Inclure TOUS les marquages : ceux sans décision comptent comme "EN COURS"
+                statuses = [
+                    decisions[m]["decision"] if m in decisions else "EN COURS"
+                    for m in mqs
+                ]
                 all_valide  = bool(statuses) and all(s in ("VALIDÉ", "EN PRÊT") for s in statuses)
-                all_done    = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE", "EN PRÊT") for s in statuses)
+                all_done    = bool(statuses) and all(s in _DONE_STATUSES for s in statuses)
                 any_pcheck  = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_done
                 done = all_done
                 count = len(mqs)
@@ -2319,12 +2361,39 @@ class MainWindow(QMainWindow):
     def _on_pn_selected(self, item: QListWidgetItem, _):
         if not item:
             return
+        # Auto-sauvegarder le PN en cours (EN COURS) avant de changer — évite la perte de données
+        if self._current_pn:
+            self._autosave_current_pn_as_en_cours()
         pn = item.data(Qt.ItemDataRole.UserRole)["pn"]
         self._current_pn = pn
         self.lbl_pn.setText(f"PN :  {pn}")
         self.col_filters.clear_all()
         self.table.load_pn(pn, self._module)
         self.col_filters.sync_now()
+
+    def _autosave_current_pn_as_en_cours(self):
+        """Sauvegarde silencieuse des combos remplis (svc3 requis) lors de la navigation entre PNs."""
+        forms = self.table.get_form_data()
+        to_save = [f for f in forms if f["svc3"]]
+        if not to_save:
+            return
+        for f in to_save:
+            existing = queries.get_decision(f["marquage"])
+            if existing and existing["decision"] in ("VALIDÉ", "EN ATTENTE", "EN PRÊT"):
+                continue  # ne pas écraser les décisions finalisées
+            queries.upsert_decision(
+                marquage       = f["marquage"],
+                pn_short       = f["pn_short"],
+                module_context = self._module,
+                n_service1     = f["svc1"] or None,
+                n_service2     = f["svc2"] or None,
+                n_service3     = f["svc3"] or None,
+                n_service4     = f["svc4"] or None,
+                pre_check      = f["pre_check"] or None,
+                decision       = "EN COURS",
+                commentaire    = f["commentaire"] or None,
+                updated_by     = "manager_autosave",
+            )
 
     def _next_pn(self):
         for i in range(self.pn_list.count()):
@@ -2355,10 +2424,12 @@ class MainWindow(QMainWindow):
     def _refresh_pn_item(self, pn: str, decision_val: str):
         """Met à jour uniquement l'item PN concerné — sans reconstruire toute la liste."""
         decs = queries.get_decisions_for_pn_in_module(pn, self._module)
-        statuses = [r["decision"] for r in decs if r["decision"]]
+        # Inclure les outils sans décision comme "EN COURS" pour ne pas masquer les trous
+        statuses = [r["decision"] if r["decision"] else "EN COURS" for r in decs]
+        _DONE = ("VALIDÉ", "EN ATTENTE", "EN PRÊT")
         all_valide = bool(statuses) and all(s in ("VALIDÉ", "EN PRÊT") for s in statuses)
         any_pcheck = bool(statuses) and any(s == "EN ATTENTE" for s in statuses) and not all_valide
-        done = bool(statuses) and all(s in ("VALIDÉ", "EN ATTENTE", "EN PRÊT") for s in statuses)
+        done = bool(statuses) and all(s in _DONE for s in statuses)
         count = len(decs)
 
         for item in self._pn_items:

@@ -34,6 +34,16 @@ except ImportError:
 from functools import lru_cache
 from db import queries
 from config import DOCS_DIR
+from services import svc4_options as _svc4_options
+
+_BLD_TO_SVC1 = {
+    "MF":  "SAESB MF - B24 - MODULE MX / REP",
+    "LSO": "SAESB LSO - B118 - ENGINE MX / REP",
+}
+_SVC1_PREFIX_OTHER = {
+    "MF":  "SAESB LSO",
+    "LSO": "SAESB MF",
+}
 
 @lru_cache(maxsize=1)
 def _doc_index() -> list:
@@ -246,7 +256,8 @@ class DECAPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._module = ""
+        self._module   = ""
+        self._building = ""
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(4)
@@ -276,10 +287,17 @@ class DECAPanel(QWidget):
         self._lbl_count.setStyleSheet("color:#666; font-size:11px;")
         lay.addWidget(self._lbl_count)
 
-    def load(self, module: str = ""):
-        self._module  = module
+    def load(self, module: str = "", building: str = ""):
+        self._module   = module
+        self._building = building
         self._tree.clear()
-        rows = queries.get_all_tools_for_export(module)
+        all_rows = queries.get_all_tools_for_export(module)
+        # filtrer: si bâtiment sélectionné, exclure les outils clairement de l'autre bâtiment
+        other_prefix = _SVC1_PREFIX_OTHER.get(building, "")
+        rows = [
+            r for r in all_rows
+            if not other_prefix or not (dict(r).get("service1") or "").startswith(other_prefix)
+        ]
         pn_map: dict[str, list] = {}
         for r in rows:
             pn = r["pn_short"] or "—"
@@ -377,8 +395,11 @@ class PlanWindow(QDialog):
     def __init__(self, module: str = "", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Mode Plan — Assignation Service 4")
+        self.setWindowFlag(Qt.WindowType.Window)   # fenêtre indépendante redimensionnable
         self.resize(1400, 900)
         self._module      = module
+        self._building    = ""   # "MF" ou "LSO"
+        self._svc1        = ""   # service1 complet pour filtres
         self._zones: list[PlanZone] = []
         self._pdf_path: Path | None = None
         self._zone_file:  Path | None = None
@@ -417,6 +438,14 @@ class PlanWindow(QDialog):
         self._btn_del_zone.setEnabled(False)
         self._btn_del_zone.clicked.connect(self._delete_zone)
         bar.addWidget(self._btn_del_zone)
+
+        bar.addSpacing(12)
+
+        self._btn_save_zones = QPushButton("💾  Sauvegarder zones")
+        self._btn_save_zones.setEnabled(False)
+        self._btn_save_zones.setToolTip("Sauvegarde la définition des zones dans le fichier .zones.json\n(les assignations sont sauvegardées automatiquement dans la DB)")
+        self._btn_save_zones.clicked.connect(self._save_zones_explicit)
+        bar.addWidget(self._btn_save_zones)
 
         bar.addStretch()
 
@@ -462,14 +491,26 @@ class PlanWindow(QDialog):
             self, "Ouvrir plan d'atelier", "", "PDF (*.pdf)")
         if not path:
             return
+
+        # Choix du bâtiment pour filtrer les DECAs et les svc4 disponibles
+        bld, ok = QInputDialog.getItem(
+            self, "Bâtiment", "Ce plan correspond à quel bâtiment ?",
+            ["MF", "LSO"], editable=False)
+        if not ok:
+            return
+        self._building = bld
+        self._svc1     = _BLD_TO_SVC1.get(bld, "")
+
         self._pdf_path  = Path(path)
-        self._zone_file = self._pdf_path.with_suffix(".zones.json")
+        self._zone_file = self._pdf_path.with_suffix(f".{bld.lower()}.zones.json")
         self._render_pdf()
         self._load_zones()
         self._btn_edit.setEnabled(True)
         self._btn_assign.setEnabled(True)
-        self._lbl_mode.setText(f"Plan : {self._pdf_path.name}")
+        self._btn_save_zones.setEnabled(True)
+        self._lbl_mode.setText(f"Plan {bld} : {self._pdf_path.name}")
         self._status.setText(f"{len(self._zones)} zones chargées.")
+        self._panel.load(self._module, building=self._building)
 
     def _render_pdf(self):
         self._scene.clear()
@@ -501,6 +542,11 @@ class PlanWindow(QDialog):
                        indent=2, ensure_ascii=False),
             encoding="utf-8")
 
+    def _save_zones_explicit(self):
+        self._save_zones()
+        self._status.setText(
+            f"💾  Zones sauvegardées ({len(self._zones)}) dans {self._zone_file.name if self._zone_file else '?'}.")
+
     def _add_zone(self, points: list, name: str, service4: str, color_idx: int) -> PlanZone:
         zone = PlanZone(points, name, service4, color_idx, self._assign_mode)
         self._scene.addItem(zone)
@@ -523,8 +569,15 @@ class PlanWindow(QDialog):
             self._lbl_mode.setText(f"Plan : {self._pdf_path.name if self._pdf_path else ''}")
 
     def _on_polygon_finished(self, coords: list):
-        name, ok = QInputDialog.getText(
-            self, "Nouvelle zone", "Nom de la zone (sera utilisé comme Service 4) :")
+        svc4_list = _svc4_options(self._svc1) if self._svc1 else []
+        if svc4_list:
+            name, ok = QInputDialog.getItem(
+                self, "Service 4 de la zone",
+                f"Service 4 ({self._building}) :",
+                svc4_list, editable=True)
+        else:
+            name, ok = QInputDialog.getText(
+                self, "Nouvelle zone", "Service 4 (nom de la zone) :")
         if not ok or not name.strip():
             return
         name = name.strip()
