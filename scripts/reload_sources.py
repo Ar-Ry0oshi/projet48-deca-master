@@ -94,6 +94,20 @@ _DECA_COL_MAP = {
     "localisation5":    ("Localisation5",     "localisation5"),
 }
 
+# Extra aliases tried when neither the primary name nor case-insensitive match works
+_DECA_COL_ALIASES: dict[str, list[str]] = {
+    "service1":      ["svc 1", "svc1", "service 1"],
+    "service2":      ["svc 2", "svc2", "service 2"],
+    "service3":      ["svc 3", "svc3", "service 3", "svc 3 actuel", "svc3 actuel"],
+    "service4":      ["svc 4", "svc4", "service 4"],
+    "service5":      ["svc 5", "svc5", "service 5"],
+    "localisation1": ["loc 1", "loc1", "localisation 1", "location1", "location 1"],
+    "localisation2": ["loc 2", "loc2", "localisation 2", "location2", "location 2"],
+    "localisation3": ["loc 3", "loc3", "localisation 3", "location3", "location 3"],
+    "localisation4": ["loc 4", "loc4", "localisation 4", "location4", "location 4"],
+    "localisation5": ["loc 5", "loc5", "localisation 5", "location5", "location 5"],
+}
+
 SVC_COLS_INTERNAL = ["service1", "service2", "service3", "service4", "service5"]
 
 
@@ -139,7 +153,15 @@ def _load_deca(path: Path) -> tuple[pd.DataFrame, str]:
             out[internal] = df[src_col].str.strip()
         elif src_col:
             # Try case-insensitive match
-            match = next((c for c in df.columns if c.strip().lower() == src_col.lower()), None)
+            cols_lower = {c.strip().lower(): c for c in df.columns}
+            match = cols_lower.get(src_col.lower())
+            if match is None:
+                # Try known aliases (also case-insensitive)
+                for alias in _DECA_COL_ALIASES.get(internal, []):
+                    match = cols_lower.get(alias.lower())
+                    if match:
+                        log.info("Column alias matched: '%s' → internal '%s'", match, internal)
+                        break
             if match:
                 out[internal] = df[match].str.strip()
             else:
