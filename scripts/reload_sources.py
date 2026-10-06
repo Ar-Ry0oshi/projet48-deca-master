@@ -43,7 +43,7 @@ def _pn_short(pn: str | None) -> str | None:
     if not pn or pd.isna(pn):
         return None
     pn = str(pn).strip().upper()
-    pn = re.sub(r"G\d+$", "", pn)
+    pn = re.sub(r"[GP]\d+$", "", pn)
     return pn or None
 
 
