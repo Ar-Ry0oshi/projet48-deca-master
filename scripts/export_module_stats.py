@@ -75,13 +75,13 @@ def load_data():
         SELECT
             t.marquage,
             t.pn_short,
-            t.modules,
+            t.modules_effective AS modules,
             t.complexity_flag,
             t.exclusion_reason
         FROM tools t
         WHERE t.pn_short IS NOT NULL
-          AND t.modules IS NOT NULL
-          AND t.modules != ''
+          AND t.modules_effective IS NOT NULL
+          AND t.modules_effective != ''
           AND t.exclusion_reason IS NULL
     """)
 
